@@ -1,0 +1,62 @@
+# Builds the launcher for macOS, Windows and Linux when a version tag is pushed (e.g. v0.1.0)
+# and attaches the installers to a draft GitHub release. GitHub adds "Source code (zip)" and
+# "(tar.gz)" to every release on its own. Review the draft, then press "Publish release".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest          # Apple Silicon (.dmg, .app)
+            args: --target aarch64-apple-darwin
+          - platform: windows-latest        # .msi and setup .exe
+            args: ""
+          - platform: ubuntu-22.04          # .AppImage, .deb, .rpm (x86_64)
+            args: ""
+          - platform: ubuntu-22.04-arm      # .AppImage, .deb, .rpm (arm64)
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: KoboldCpp Launcher ${{ github.ref_name }}
+          releaseBody: See the README for what the launcher does. The installers are not signed yet; see the notes below each download.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
