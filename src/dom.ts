@@ -6,14 +6,14 @@ export type Attrs = Record<string, unknown> | null;
 export const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) =>
   root.querySelector<T>(sel);
 
-/** Create an element. `on*` attributes become event listeners, `html` sets innerHTML. */
+/** Create an element. `on*` attributes become event listeners. Text is always inserted as text
+ *  (never as HTML), so names and notes from Hugging Face or GitHub can't inject markup. */
 export function h(tag: string, attrs: Attrs = {}, ...kids: Kid[]): HTMLElement {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs ?? {})) {
     if (v == null || v === false) continue;
     if (k === "class") el.className = String(v);
     else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === "html") el.innerHTML = String(v);
     else el.setAttribute(k, v === true ? "" : String(v));
   }
   append(el, kids);

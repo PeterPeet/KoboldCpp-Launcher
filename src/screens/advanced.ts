@@ -303,9 +303,10 @@ async function importConfig() {
   const p = await open({ multiple: false, filters: [{ name: "KoboldCpp settings", extensions: ["kcpps", "kcppt"] }] });
   if (typeof p !== "string") return;
   try {
-    S.cfg = await api.loadConfig(p);
+    const r = await api.importConfig(p);
+    S.cfg = r.config;
     refreshCli();
-    toast("Settings loaded");
+    toast(r.removed.length ? `Settings loaded. Left out for safety: ${r.removed.join(", ")}` : "Settings loaded");
     render();
   } catch (e) {
     toast(String(e));

@@ -99,7 +99,9 @@ pub async fn list(hf: &Hf<'_>) -> Vec<Template> {
         for s in info.siblings.iter().filter(|s| s.rfilename.ends_with(".kcppt")) {
             let url = format!("https://huggingface.co/koboldcpp/{c}/resolve/main/{}", s.rfilename);
             let Ok(text) = hf.get_text(&url, DAY).await else { continue };
-            let Ok(cfg) = Kcpps::parse(&text) else { continue };
+            let Ok(mut cfg) = Kcpps::parse(&text) else { continue };
+            // Downloaded settings: no commands, files or network exposure (see config::safety).
+            crate::config::safety::strip_untrusted(&mut cfg);
             let id = s.rfilename.trim_end_matches(".kcppt").to_string();
             let mut files = Vec::new();
             for (k, u) in cfg.urls() {

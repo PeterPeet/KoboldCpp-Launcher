@@ -256,6 +256,8 @@ export const api = {
   savePreset: (name: string, config: Kcpps) => call<string>("save_preset", { name, config }, () => name),
   deletePreset: (name: string) => call<void>("delete_preset", { name }, () => {}),
   loadConfig: (path: string) => call<Kcpps>("load_config", { path }, () => ({ model_param: "/models/Qwen3.8-27B-Q4_K_M.gguf", contextsize: 16384 })),
+  /** A settings file from elsewhere: unsafe options come back in `removed`. */
+  importConfig: (path: string) => call<{ config: Kcpps; removed: string[] }>("import_config", { path }),
   lastConfig: () => call<Kcpps | null>("last_config", {}, () => null),
   importSources: (path: string) => call<Source[]>("import_sources", { path }),
 };

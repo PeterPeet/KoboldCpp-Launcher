@@ -91,13 +91,13 @@ fn signal_group(pid: u32, force: bool) {
 pub fn reclaim_port(port: u16, bin_dir: &Path) -> bool {
     #[cfg(unix)]
     {
-        let out = |cmd: &str, args: &[&str]| Command::new(cmd).args(args).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        let out = |cmd: &str, args: &[&str]| Command::new(system_tool(cmd)).args(args).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
         let bin = bin_dir.to_string_lossy().into_owned();
         let mut stopped = false;
         for pid in out("lsof", &["-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"]).lines().filter_map(|l| l.trim().parse::<i32>().ok()) {
             // The listening process is KoboldCpp's Python child; its parent is the program we ran.
             let ppid = out("ps", &["-o", "ppid=", "-p", &pid.to_string()]).trim().parse::<i32>().unwrap_or(0);
-            let ours = [pid, ppid].iter().any(|p| *p > 1 && out("ps", &["-o", "command=", "-p", &p.to_string()]).contains(&bin));
+            let ours = [pid, ppid].iter().any(|p| *p > 1 && started_from(&out("ps", &["-o", "command=", "-p", &p.to_string()]), &bin));
             if ours {
                 for p in [pid, ppid].into_iter().filter(|p| *p > 1) {
                     unsafe { libc::kill(p, libc::SIGTERM) };
@@ -127,11 +127,13 @@ pub fn kill_orphans(bin_dir: &Path) -> usize {
     {
         let bin = bin_dir.to_string_lossy().into_owned();
         let me = std::process::id() as i32;
-        let Ok(out) = Command::new("ps").args(["-axo", "pid=,command="]).output() else { return 0 };
+        let Ok(out) = Command::new(system_tool("ps")).args(["-axo", "pid=,command="]).output() else { return 0 };
         let pids: Vec<i32> = String::from_utf8_lossy(&out.stdout)
             .lines()
-            .filter(|l| l.contains(&bin))
-            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+            .filter_map(|l| {
+                let (pid, cmd) = l.trim_start().split_once(' ')?;
+                started_from(cmd, &bin).then(|| pid.parse().ok()).flatten()
+            })
             .filter(|&p| p > 1 && p != me)
             .collect();
         for &p in &pids {
@@ -153,6 +155,20 @@ pub fn kill_orphans(bin_dir: &Path) -> usize {
         let _ = bin_dir;
         0
     }
+}
+
+/// Is this command line a program inside `bin_dir` (the program itself, not e.g. an editor that
+/// has a file from there open)?
+#[cfg(unix)]
+fn started_from(command: &str, bin_dir: &str) -> bool {
+    let bin = bin_dir.trim_end_matches('/');
+    !bin.is_empty() && command.trim_start().strip_prefix(bin).is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// System tools by their fixed location, so a changed PATH can't swap them.
+#[cfg(unix)]
+fn system_tool(name: &str) -> String {
+    ["/usr/sbin/", "/usr/bin/", "/bin/", "/sbin/"].iter().map(|d| format!("{d}{name}")).find(|p| Path::new(p).is_file()).unwrap_or_else(|| name.to_string())
 }
 
 /// A pseudo-terminal for KoboldCpp's output: (our side, its stdout, its stderr).
@@ -454,6 +470,15 @@ impl ServerManager {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn only_programs_from_our_folder_count() {
+        let bin = "/Users/x/Library/Application Support/kl/bin";
+        assert!(started_from("/Users/x/Library/Application Support/kl/bin/v1.124.2/koboldcpp-mac-arm64 --config a", bin));
+        assert!(!started_from("vim /Users/x/Library/Application Support/kl/bin/v1.124.2/koboldcpp-mac-arm64", bin));
+        assert!(!started_from("/Users/x/Library/Application Support/kl/bin-other/koboldcpp", bin));
+        assert!(!started_from("/anything", ""));
+    }
 
     #[test]
     fn strips_color_codes() {

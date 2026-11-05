@@ -76,6 +76,7 @@ pub fn run() {
             save_preset,
             delete_preset,
             load_config,
+            import_config,
             last_config,
         ])
         .build(tauri::generate_context!())

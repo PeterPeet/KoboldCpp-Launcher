@@ -25,6 +25,8 @@ pub enum DownloadError {
     Incomplete { got: u64, want: u64 },
     #[error("checksum does not match")]
     Checksum,
+    #[error("only https:// downloads are allowed")]
+    NotHttps,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -57,7 +59,14 @@ pub fn normalize_url(url: &str) -> String {
 /// File name from a URL (last path segment, without query or fragment).
 pub fn file_name_from_url(url: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or(url);
-    path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("download").to_string()
+    path.rsplit('/').next().and_then(safe_name).unwrap_or_else(|| "download".into())
+}
+
+/// A file or folder name that stays where it is put: letters, digits and `._-+()` (anything else
+/// becomes `_`), not empty, not `.`/`..`, not hidden. Hugging Face names already fit this.
+pub fn safe_name(s: &str) -> Option<String> {
+    let n: String = s.chars().map(|c| if c.is_ascii_alphanumeric() || "._-+()".contains(c) { c } else { '_' }).collect();
+    (!n.is_empty() && !n.starts_with('.') && n.len() <= 200).then_some(n)
 }
 
 /// Folder for a download inside the models folder: `<owner>/<repo>` for Hugging Face links, so a
@@ -66,9 +75,10 @@ pub fn repo_subdir(url: &str) -> PathBuf {
     let rest = url.split_once("huggingface.co/").map(|(_, r)| r).unwrap_or("");
     let mut parts = rest.split('/');
     match (parts.next(), parts.next(), parts.next()) {
-        (Some(owner), Some(repo), Some("resolve" | "blob")) if !owner.is_empty() && !repo.is_empty() && !owner.contains("..") && !repo.contains("..") => {
-            PathBuf::from(owner).join(repo)
-        }
+        (Some(owner), Some(repo), Some("resolve" | "blob")) => match (safe_name(owner), safe_name(repo)) {
+            (Some(o), Some(r)) => PathBuf::from(o).join(r),
+            _ => PathBuf::new(),
+        },
         _ => PathBuf::new(),
     }
 }
@@ -106,6 +116,12 @@ pub struct Request<'a> {
 /// Download `req.url` to `req.dest`. Skips the download if `dest` already exists with the
 /// expected size. Calls `progress` at most ~5 times a second.
 pub async fn download(client: &reqwest::Client, req: Request<'_>, cancel: &Cancel, mut progress: impl FnMut(Progress)) -> Result<PathBuf, DownloadError> {
+    // Encrypted only: a plain-http file could be swapped on the way.
+    let url = req.url.to_ascii_lowercase();
+    // (Tests use a local plain-http server.)
+    if !url.starts_with("https://") && !(cfg!(test) && url.starts_with("http://127.0.0.1")) {
+        return Err(DownloadError::NotHttps);
+    }
     let dest = req.dest;
     if let (Ok(meta), Some(want)) = (std::fs::metadata(dest), req.size)
         && meta.len() == want
@@ -249,6 +265,11 @@ mod tests {
         assert_eq!(repo_subdir("https://huggingface.co/koboldcpp/tts/resolve/main/Kokoro.gguf"), PathBuf::from("koboldcpp/tts"));
         assert_eq!(repo_subdir("https://example.com/x.gguf"), PathBuf::new());
         assert_eq!(repo_subdir("https://huggingface.co/../x/resolve/main/a.gguf"), PathBuf::new());
+        // Names from URLs can't leave the models folder.
+        assert_eq!(file_name_from_url("https://huggingface.co/a/b/resolve/main/.."), "download");
+        assert_eq!(file_name_from_url("https://x.org/a/..%5C..%5Cevil.gguf"), "download", "hidden or dot names are refused");
+        assert_eq!(file_name_from_url("https://x.org/a\\..\\evil.gguf"), "a_.._evil.gguf");
+        assert_eq!(repo_subdir("https://huggingface.co/a:b/c\\d/resolve/main/x.gguf"), PathBuf::from("a_b/c_d"));
     }
 
     #[test]

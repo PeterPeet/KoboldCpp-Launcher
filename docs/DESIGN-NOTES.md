@@ -110,6 +110,26 @@ Open question: follow KoboldCpp or Esobold releases.
 
 ## Implementation (2026-11-05)
 
+- **Security review (Nov 2026)**, summary in `SECURITY.md`:
+  - Launch options in `config::safety`: `NEVER` keys are stripped before every start, and
+    `UNTRUSTED_ONLY` keys (host, remotetunnel, multiuser, multiplayer, password) are also
+    stripped from templates and imports. A test checks that every listed key is a real KoboldCpp
+    option.
+  - `load_config` reads only the presets folder; `import_config` is for files from elsewhere and
+    reports what it removed.
+  - Downloads are `https` only, with `download::safe_name` for file and folder names.
+  - `set_binary_path` requires "koboldcpp"/"esobold" in the name; sources import/export takes
+    `.json` only, with a size limit.
+  - Process control matches a command that starts with our `bin` folder, and `ps`/`lsof` are run
+    by their full path.
+  - Window: CSP (own files plus the IPC bridge only; inline styles allowed), `withGlobalTauri`
+    off, the DOM helper has no HTML option.
+  - CI (`.github/workflows/ci.yml`) runs tsc, build, `npm audit`, clippy `-D warnings` and tests
+    on macOS, Windows and Linux; actions are pinned to commits.
+  - Rust advisories (OSV, Nov 2026): only Tauri's Linux GTK stack (glib 0.18 unsoundness in an
+    API we don't use, and four "unmaintained" notices). rustfmt isn't enforced; the code
+    uses long lines.
+
 - **Uncensored label:** the repo ID contains uncensored, abliterated, unfiltered, decensored,
   orthogonalized, heretic or thedrummer (TheDrummer's models and others' quants of them), in the
   repo ID or its base model, or has

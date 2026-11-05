@@ -126,7 +126,9 @@ export function openUpdate() {
     const U = S.update;
     const has = !installed() || !!U?.updateAvailable;
     const latest = U?.latest;
-    const link = (href: string, text: string, style = "color:var(--accent-text)") => h("a", { href, target: "_blank", rel: "noopener", style }, text);
+    // Links from GitHub's answer: only https (no javascript: or file: links).
+    const link = (href: string, text: string, style = "color:var(--accent-text)") =>
+      /^https:\/\//i.test(href) ? h("a", { href, target: "_blank", rel: "noopener", style }, text) : h("span", {}, text);
     const title = !installed()
       ? "Install KoboldCpp"
       : has && latest ? `KoboldCpp ${latest.tag} is available` : "You're up to date";

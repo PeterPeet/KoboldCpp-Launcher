@@ -299,6 +299,11 @@ pub fn set_binary_path(state: State<'_, AppState>, path: PathBuf) -> CmdResult<I
     if !path.is_file() {
         return Err("That file does not exist".into());
     }
+    // The launcher runs this file: only something that is called KoboldCpp (or Esobold).
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !name.contains("koboldcpp") && !name.contains("esobold") {
+        return Err("That doesn't look like a KoboldCpp program (its name should contain \"koboldcpp\")".into());
+    }
     let b = InstalledBinary { path, version: None, asset: None };
     state.update_settings(|s| s.binary = Some(b.clone()))?;
     Ok(b)
@@ -312,6 +317,11 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     let models = s.models_dir(&state.dirs);
     std::fs::create_dir_all(&models).map_err(err)?;
     cfg.migrate();
+    // Last line of defence, whatever the config came from (see config::safety).
+    let removed = crate::config::safety::strip_never(&mut cfg);
+    if !removed.is_empty() {
+        crate::applog!("options removed before start: {}", removed.join(", "));
+    }
     // Without any model KoboldCpp opens its own Tk launcher instead of serving.
     const MODEL_KEYS: &[&str] = &["model_param", "sdmodel", "whispermodel", "ttsmodel", "embeddingsmodel", "musicdiffusion", "musicllm", "mcpfile"];
     if !MODEL_KEYS.iter().any(|k| cfg.get_str(k).is_some()) && !cfg.get_bool("nomodel") {
@@ -752,12 +762,18 @@ pub fn cancel_download(downloads: State<'_, Downloads>, id: String) {
 
 #[tauri::command]
 pub fn export_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
+        return Err("Save the sources as a .json file".into());
+    }
     let json = serde_json::to_string_pretty(&state.settings().sources).map_err(err)?;
     crate::store::write_atomic(&path, json.as_bytes()).map_err(err)
 }
 
 #[tauri::command]
 pub fn import_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Vec<crate::hf::Source>> {
+    if std::fs::metadata(&path).map_err(err)?.len() > 1 << 20 {
+        return Err("That file is too big for a sources file".into());
+    }
     let text = std::fs::read_to_string(&path).map_err(err)?;
     let mut list: Vec<crate::hf::Source> = serde_json::from_str(&text).map_err(|e| format!("Not a sources file: {e}"))?;
     list.retain(|s| s.builtin || crate::hf::valid_source_name(&s.name));
@@ -899,12 +915,44 @@ pub fn delete_preset(state: State<'_, AppState>, name: String) -> CmdResult<()> 
     std::fs::remove_file(preset_path(&state, &name)?).map_err(err)
 }
 
-/// Read any .kcpps/.kcppt (preset, import, drag and drop) with legacy keys migrated.
+/// Load one of the user's presets (only files in the presets folder).
 #[tauri::command]
-pub fn load_config(path: PathBuf) -> CmdResult<Map<String, Value>> {
+pub fn load_config(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Map<String, Value>> {
+    let dir = state.dirs.presets().canonicalize().map_err(err)?;
+    let p = path.canonicalize().map_err(err)?;
+    if !p.starts_with(&dir) {
+        return Err("Not a preset".into());
+    }
+    let mut k = Kcpps::load(&p).map_err(err)?;
+    k.migrate();
+    crate::config::safety::strip_never(&mut k);
+    Ok(k.map().clone())
+}
+
+#[derive(Serialize)]
+pub struct Imported {
+    pub config: Map<String, Value>,
+    /// Options left out because they are unsafe in a file from elsewhere (see config::safety).
+    pub removed: Vec<String>,
+}
+
+/// Import a .kcpps/.kcppt from anywhere: legacy keys migrated, unsafe options removed.
+#[tauri::command]
+pub fn import_config(path: PathBuf) -> CmdResult<Imported> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !matches!(ext.as_str(), "kcpps" | "kcppt" | "json") {
+        return Err("Choose a .kcpps or .kcppt file".into());
+    }
+    if std::fs::metadata(&path).map_err(err)?.len() > 4 << 20 {
+        return Err("That file is too big for a settings file".into());
+    }
     let mut k = Kcpps::load(&path).map_err(err)?;
     k.migrate();
-    Ok(k.map().clone())
+    let removed = crate::config::safety::strip_untrusted(&mut k);
+    if !removed.is_empty() {
+        crate::applog!("import {}: removed {}", path.display(), removed.join(", "));
+    }
+    Ok(Imported { config: k.map().clone(), removed })
 }
 
 /// Settings of the last run, to fill the advanced page.
