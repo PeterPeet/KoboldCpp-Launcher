@@ -6,6 +6,17 @@ import { launch, stop } from "../server";
 import { S, machine, render } from "../state";
 import { famClass, popularRow, speedText } from "./start";
 import { getOpts, setOpts } from "../modelopts";
+import { openSources } from "../dialogs/sources";
+
+/** Search results left out because their uploader's source is off. */
+const hiddenCount = (r: PopularResult) => (r.hidden ?? []).reduce((a, [, n]) => a + n, 0);
+function hiddenNote(r: PopularResult) {
+  const list = (r.hidden ?? []).slice(0, 4).map(([a, n]) => `${a} ${n}`).join(", ") + ((r.hidden ?? []).length > 4 ? ", …" : "");
+  const n = hiddenCount(r);
+  return h("div", { class: "foot" },
+    h("span", {}, `${n} result${n > 1 ? "s" : ""} from sources that are off: ${list}`),
+    h("button", { class: "linkbtn", onclick: openSources }, "Model Sources"));
+}
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
 const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on", MtpHead: "MTP add-on" };
@@ -16,7 +27,9 @@ let view: LibraryView | null = null;
 let loading = false;
 let fits: Record<string, LocalFit> = {};
 let fitKey = "";
-let search: { q: string; result: PopularResult | null; error: string; seq: number } = { q: "", result: null, error: "", seq: 0 };
+let search: { q: string; result: PopularResult | null; error: string; seq: number; sources: string } = { q: "", result: null, error: "", seq: 0, sources: "" };
+/** Which sources are on: results depend on it, so a change in Model Sources searches again. */
+const sourcesKey = () => S.sources.filter((s) => s.on).map((s) => s.name).join(",");
 let searchTimer: number | undefined;
 
 /** Forget the last scan; the next visit (or render while visible) scans again. */
@@ -225,7 +238,7 @@ export function renderLibrary() {
     q.addEventListener("input", () => { L.q = q.value; renderLibGrid(); });
     side.append(q);
   } else {
-    side.append(h("p", { class: "note", style: "margin:0" }, "Search all GGUF models on Hugging Face. Each row shows the best quantization that fits this PC."));
+    side.append(h("p", { class: "note", style: "margin:0" }, "Search the GGUF models of your active sources on Hugging Face. Each row shows the best quantization that fits this PC."));
   }
 
   if (view && L.tab === "local") {
@@ -308,6 +321,7 @@ async function runSearch() {
   if (q.length < 2) return;
   const seq = ++search.seq;
   search.error = "";
+  search.sources = sourcesKey();
   if (search.result === null) renderLibGrid();
   try {
     const r = await api.search(q, machine());
@@ -337,6 +351,7 @@ function renderLibGrid() {
       setTimeout(() => input?.focus());
     }
     const results = $("#hfResults")!;
+    if (search.result && search.sources !== sourcesKey()) runSearch();
     const r = search.result;
     const list = h("div", { class: "list" }, ...(r?.items ?? []).map((m) => popularRow(m)));
     const typing = search.q.trim().length >= 2;
@@ -344,8 +359,9 @@ function renderLibGrid() {
       r === null
         ? (typing ? h("div", { class: "empty" }, "Searching…") : h("div", { class: "empty" }, "Type a model name to search."))
         : search.error ? h("div", { class: "empty" }, search.error)
-        : r.items.length ? list : h("div", { class: "empty" }, r.tooBig ? "Nothing that fits this PC." : "No GGUF models found."),
-      ...(r?.tooBig ? [h("div", { class: "foot" }, h("span", {}, `${r.tooBig} too big for this PC, hidden`))] : []));
+        : r.items.length ? list : h("div", { class: "empty" }, r.tooBig ? "Nothing that fits this PC." : hiddenCount(r) ? "Nothing from your active sources." : "No GGUF models found."),
+      ...(r?.tooBig ? [h("div", { class: "foot" }, h("span", {}, `${r.tooBig} too big for this PC, hidden`))] : []),
+      ...(r && hiddenCount(r) ? [hiddenNote(r)] : []));
     return;
   }
 

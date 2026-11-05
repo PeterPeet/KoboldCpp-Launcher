@@ -121,6 +121,9 @@ Open question: follow KoboldCpp or Esobold releases.
   add little: their models arrive as quants by others.
 - **Default sources, version 3:** mradermacher (quants of nearly everything, static and imatrix
   "i1" repos) and DavidAU (own finetunes and merges), both off by default.
+- **Discover search follows the sources:** only uploaders whose source is on (100 matches are
+  fetched, most downloaded first); matches from sources that are off are counted per uploader
+  and named in a note with a link to Model Sources. Changing the sources searches again.
 - **Default sources, version 4:** lmstudio-community and ggml-org (official quants of well-known
   models; ggml-org also ships MTP files), on.
 - **KoboldCpp output on a pseudo-terminal (macOS, Linux):** its C code prints with C stdio,

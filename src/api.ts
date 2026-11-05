@@ -64,7 +64,8 @@ export interface PopularItem extends Ranked {
   tps: number | null; measured: number | null;
 }
 export type SortOrder = "trending" | "downloads" | "likes" | "newest";
-export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
+/** hidden (search only): matches whose uploader's source is off, per uploader. */
+export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[]; hidden?: [string, number][] }
 export interface QuantFile { quant: string; label: string; files: string[]; size: number }
 /** builtIn: the model file has MTP layers (--usemtp). Otherwise a separate MTP head file (--draftmodel). */
 export interface Mtp { builtIn: boolean; url: string | null; size: number | null }

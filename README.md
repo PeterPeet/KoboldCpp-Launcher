@@ -53,9 +53,10 @@ unknown architecture, not enough memory, or an MLX model, which belongs in LM St
 - Move a model to another folder or drive, or remove it to the Trash.
 
 ### Discover on Hugging Face
-![Discover: search all GGUF models on Hugging Face](docs/screenshots/discover.png)
+![Discover: search GGUF models on Hugging Face](docs/screenshots/discover.png)
 
-Search all GGUF models on Hugging Face. Results look and work like the popular list: labels
+Search the GGUF models of your active sources on Hugging Face (a note says how many matches came
+from sources that are off). Results look and work like the popular list: labels
 ("Official" for the maker's own upload, "Quant by …" for others), the quantization that fits,
 Vision and MTP options, and Get and start.
 

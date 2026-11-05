@@ -481,6 +481,8 @@ pub struct PopularResult {
     pub dupes: usize,
     /// Sources that could not be reached.
     pub errors: Vec<String>,
+    /// Search only: matches left out because their uploader's source is off (uploader, count).
+    pub hidden: Vec<(String, usize)>,
 }
 
 fn now_unix() -> i64 {
@@ -575,7 +577,7 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
         let ranked = crate::hf::rank(&entries, &sources, options, now);
         let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(fam.as_str())).take(30).collect();
         let (items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 20).await;
-        return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors });
+        return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors, hidden: vec![] });
     }
     let maker_on = |m: &str| sources.iter().any(|s| s.on && s.name.eq_ignore_ascii_case(m));
     let per_family = crate::hf::FAMILIES.iter().filter(|f| maker_on(f.maker)).map(|f| {
@@ -602,7 +604,7 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
     }
     errors.sort();
     errors.dedup();
-    Ok(PopularResult { items, too_big: 0, dupes: 0, errors })
+    Ok(PopularResult { items, too_big: 0, dupes: 0, errors, hidden: vec![] })
 }
 
 /// Hugging Face search, answered like the popular list: best fitting quant, speed, options.
@@ -611,12 +613,25 @@ pub async fn search_models(state: State<'_, AppState>, query: String, machine: M
     let h = hf(&state);
     let models = state.settings().models_dir(&state.dirs);
     let speeds = state.settings().speeds;
-    let entries = h.search(&query, 30).await.map_err(err)?;
+    let sources = state.settings().sources;
+    // More matches than shown: some belong to uploaders whose source is off.
+    let entries = h.search(&query, 100).await.map_err(err)?;
     let now = now_unix();
-    // Search shows everything that matches, from any uploader (no source filter), most downloaded first.
-    let cands: Vec<crate::hf::Ranked> = entries
-        .iter()
-        .filter(|e| crate::hf::is_text_model(e))
+    // Search follows the sources: only uploaders whose source is on (the makers count as sources).
+    let on = |author: &str| sources.iter().any(|s| s.on && s.comps.is_some() && s.name.eq_ignore_ascii_case(author));
+    let text: Vec<&crate::hf::ModelEntry> = entries.iter().filter(|e| crate::hf::is_text_model(e)).collect();
+    let mut hidden: Vec<(String, usize)> = Vec::new();
+    for e in text.iter().filter(|e| !on(e.author())) {
+        match hidden.iter_mut().find(|(a, _)| a == e.author()) {
+            Some(h) => h.1 += 1,
+            None => hidden.push((e.author().to_string(), 1)),
+        }
+    }
+    hidden.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    // Most downloaded first.
+    let cands: Vec<crate::hf::Ranked> = text
+        .into_iter()
+        .filter(|e| on(e.author()))
         .map(|e| {
             let kind = crate::hf::kind_of(e);
             crate::hf::Ranked {
@@ -641,7 +656,7 @@ pub async fn search_models(state: State<'_, AppState>, query: String, machine: M
     let (mut items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 30).await;
     // with_picks prefers normal quants over fallbacks; keep the search order (downloads) otherwise.
     items.sort_by(|a, b| a.pick.fallback.cmp(&b.pick.fallback).then(b.model.downloads.cmp(&a.model.downloads)));
-    Ok(PopularResult { items, too_big, dupes: 0, errors: vec![] })
+    Ok(PopularResult { items, too_big, dupes: 0, errors: vec![], hidden })
 }
 
 /// Model families for the start screen filter row: (id, label, maker account).
