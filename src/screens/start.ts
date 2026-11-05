@@ -3,19 +3,15 @@
 import { TEMPLATES, TIERS, type TierId } from "../data";
 import { checkbox, fmt, gb, h, toggle, toast } from "../dom";
 import { openSources } from "../dialogs/sources";
-import { fitPill, goControl, popular, speed, stopServer, tplFit } from "../fit";
+import { fitPill, goControl, popular, speed, tplFit } from "../fit";
+import { serverBanner } from "./banner";
 import { S, render, saveTier, vram } from "../state";
 
 export function renderStart() {
   const t = TIERS[S.tier];
   const root = h("div", { class: "start" });
 
-  if (S.running)
-    root.append(h("div", { class: "running" },
-      h("span", { class: "dot", style: "background:var(--ok)" }),
-      h("div", { class: "main" }, `${S.running} is running on localhost:5001`),
-      h("button", { onclick: () => toast("Opens Lite in your browser") }, "Open Lite"),
-      h("button", { class: "ghost", onclick: stopServer }, "Stop")));
+  root.append(...serverBanner());
 
   const tierSel = h("select", { id: "tierSel", "aria-label": "Simulated hardware" },
     ...Object.entries(TIERS).map(([k, v]) => h("option", { value: k, selected: k === S.tier }, v.label))) as HTMLSelectElement;

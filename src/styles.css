@@ -108,7 +108,15 @@ h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-3
 .linkbtn{border:none;background:none;padding:0;color:var(--accent-text);font-size:inherit;font-weight:500}
 .linkbtn:hover{background:none;text-decoration:underline}
 .running{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:12px;background:var(--ok-soft);color:var(--ok);flex-wrap:wrap}
-.running .main{flex:1;min-width:0;font-size:14px}
+.running .main{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}
+.running.busy{background:var(--accent-soft);color:var(--accent-text)}
+.running.bad{background:var(--bad-soft);color:var(--bad)}
+.spinner{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.status.busy .dot{background:var(--accent)} .status.busy{color:var(--accent-text)}
+.status.bad .dot{background:var(--bad)} .status.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,transparent)}
+pre.log{margin:0;max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.45 var(--f-mono);color:var(--fg-2);white-space:pre-wrap;overflow-wrap:anywhere}
+pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(--f-ui);white-space:pre-wrap;color:var(--fg-2)}
 /* library */
 .lib{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100%}
 .side{border-right:1px solid var(--line);background:var(--panel);padding:16px;display:grid;gap:18px;align-content:start}

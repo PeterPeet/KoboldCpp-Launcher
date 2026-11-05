@@ -1,5 +1,6 @@
 // App state. One mutable object; screens read it and call render() after changes.
 
+import type { BinaryStatus, HardwareInfo, ServerStatus, Settings, UpdateInfo } from "./api";
 import { TIERS, type TierId } from "./data";
 
 export interface Source {
@@ -43,16 +44,13 @@ export const S = {
     img: 1,
     mode: "layer",
   },
-  upd: {
-    ver: "v1.123.1",
-    latest: "v1.124.2",
-    date: "Oct 31, 2026",
-    onStart: true,
-    pre: false,
-    state: "idle" as "idle" | "working",
-    pct: 0,
-    step: "",
-  },
+  server: { state: "stopped" } as ServerStatus,
+  logs: [] as string[],
+  binary: null as BinaryStatus | null,
+  update: null as UpdateInfo | null,
+  updateError: "",
+  settings: null as Settings | null,
+  hw: null as HardwareInfo | null,
 };
 
 try {

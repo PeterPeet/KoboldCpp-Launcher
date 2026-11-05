@@ -3,6 +3,8 @@
 import { MODELS, TIERS, type Fit, type HfModel, type Template } from "./data";
 import { gb, h, toast } from "./dom";
 import { S, render, vram } from "./state";
+import { launch, stop } from "./server";
+import { sampleConfig } from "./data";
 
 export interface Pick { q: string; size: number; fit: Fit }
 
@@ -87,24 +89,13 @@ export function tplFit(t: Template): Fit {
 
 /* ---- simulated downloads and server state ---- */
 
-export function setStatus() {
-  const st = document.getElementById("status")!;
-  st.classList.toggle("on", !!S.running);
-  document.getElementById("statusText")!.textContent = S.running ? `Running · ${S.running}` : "Server stopped";
-}
-
+/** Sample flows (until phase 5) start through the real launcher with an empty config. */
 export function startServer(label: string) {
-  S.running = label;
-  setStatus();
-  render();
-  toast(`${label} is running on localhost:5001`);
+  launch(label, sampleConfig(label));
 }
 
 export function stopServer() {
-  S.running = null;
-  setStatus();
-  render();
-  toast("Server stopped");
+  stop();
 }
 
 export function startDownload(key: string, label: string, size: number) {

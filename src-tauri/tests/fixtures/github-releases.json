@@ -1,0 +1,161 @@
+[
+ {
+  "tag_name": "v1.124.2",
+  "name": "koboldcpp-1.124.2",
+  "prerelease": false,
+  "draft": false,
+  "published_at": "2026-10-31T04:51:16Z",
+  "html_url": "https://github.com/LostRuins/koboldcpp/releases/tag/v1.124.2",
+  "body": "# koboldcpp-1.124.2\r\n\r\n### `[ a e s t h e t i c . e d i t i o n ]`\r\n\r\nhttps://github.com/user-attachments/assets/ebbe75b0-b2bc-477e-90b7-08513f669047\r\n\r\n- **NEW!** - KoboldCpp has now integrated a small subset of popular models from [audio.cpp](https://github.com/0xShug0/audio.cpp) by @0xShug0! This greatly enhances the available built-in Music Gen and TTS Gen capabilities! \r\n  - Music Gen: The long awaited YuE2 music gen model is supported. Download, save and load one of the following templates:\r\n    - [YuE2, no LLM](https://huggingface.co/koboldcpp/kcppt/resolve/main/YuE2-No-LLM.kcppt) - Lig",
+  "assets": [
+   {
+    "name": "koboldcpp-linux-x64",
+    "size": 628981944,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-linux-x64",
+    "digest": "sha256:c66ae0106673c7d9c41bafcc92c95bc5a6256709e9d853e5e2255bf536c1b069"
+   },
+   {
+    "name": "koboldcpp-linux-x64-nocuda",
+    "size": 107362352,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-linux-x64-nocuda",
+    "digest": "sha256:e7bc9457030fbbc454248d801d9f6971fc4b2d3fd16e0aec71f064eed26a05f4"
+   },
+   {
+    "name": "koboldcpp-linux-x64-oldpc",
+    "size": 476011176,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-linux-x64-oldpc",
+    "digest": "sha256:8fcfa63a355b61109dee757f795c10e4c0fc9ca298f6d17a71ebadf62fc72ce2"
+   },
+   {
+    "name": "koboldcpp-mac-arm64",
+    "size": 68408816,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-mac-arm64",
+    "digest": "sha256:f6424d36081a22ba8d3e6c89413dde39bc3b0c46c3d435cbd6118d49263e5973"
+   },
+   {
+    "name": "koboldcpp-nocuda.exe",
+    "size": 89911337,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-nocuda.exe",
+    "digest": "sha256:c66550f4852a03ba992132a55bc0b1bb401851967005f10a3b7b7434484aed14"
+   },
+   {
+    "name": "koboldcpp-oldpc.exe",
+    "size": 480440832,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp-oldpc.exe",
+    "digest": "sha256:f1820f7232c35b1015a2e2fe80097b03139dec4954b4e93415a4cd0ffcffe66b"
+   },
+   {
+    "name": "koboldcpp.exe",
+    "size": 622841516,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.124.2/koboldcpp.exe",
+    "digest": "sha256:e306b58f9770fbca5265c7a0a6cc1c096d1bc3535a6d7e1f8e78c6810564faf7"
+   }
+  ]
+ },
+ {
+  "tag_name": "v1.123.1",
+  "name": "koboldcpp-1.123.1",
+  "prerelease": false,
+  "draft": false,
+  "published_at": "2026-10-13T13:36:42Z",
+  "html_url": "https://github.com/LostRuins/koboldcpp/releases/tag/v1.123.1",
+  "body": "# koboldcpp-1.123.1\r\n\r\n<img width=\"320\" height=\"384\" alt=\"teaser\" src=\"https://github.com/user-attachments/assets/31dbe52d-c78f-4744-b832-cd062cb4113d\" />\r\n\r\n- **NEW: [Introducing koboldcpp.net, our new community website](https://koboldcpp.net)!** - KoboldCpp now has an official **community website**! \r\n  - This is a legitimate community site put together with the help of @Autumnlight02 and aims to be a simple and helpful resource for newbies to get started, (and also to help combat other fake websites floating around). \r\n  - So, do check it out at **https://koboldcpp.net** - contributions are",
+  "assets": [
+   {
+    "name": "koboldcpp-linux-x64",
+    "size": 648375216,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-linux-x64",
+    "digest": "sha256:f23cd1faacd96b5627ae009012e384f9b9b57f1a3e8e49b3c2fb10cd7fd6fc79"
+   },
+   {
+    "name": "koboldcpp-linux-x64-nocuda",
+    "size": 137022184,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-linux-x64-nocuda",
+    "digest": "sha256:6b1aa62b69f825199c3296b7dd36ff6b332b894098f50db8aba0061861c14d2b"
+   },
+   {
+    "name": "koboldcpp-linux-x64-oldpc",
+    "size": 494751352,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-linux-x64-oldpc",
+    "digest": "sha256:8faf75f3d1b66be7066f81823ed92f24412d354eb02752a7c8f1e7efa82e3d39"
+   },
+   {
+    "name": "koboldcpp-mac-arm64",
+    "size": 64505520,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-mac-arm64",
+    "digest": "sha256:7bff84f74da1c8662c82828d80c8a2313aeccbde430a09b422e74964db281809"
+   },
+   {
+    "name": "koboldcpp-nocuda.exe",
+    "size": 117254353,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-nocuda.exe",
+    "digest": "sha256:ab53b529c6c9925ed5f67b2884a5b35cc6d13c645f310a71c7a9e5c996950376"
+   },
+   {
+    "name": "koboldcpp-oldpc.exe",
+    "size": 499533724,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp-oldpc.exe",
+    "digest": "sha256:f8f82508117c00dffbfc6aa434ddb7d5c1fa55e5d5219fd49b371177adae10f8"
+   },
+   {
+    "name": "koboldcpp.exe",
+    "size": 642170109,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.123.1/koboldcpp.exe",
+    "digest": "sha256:5619a9de2b694a3f8ea7c28b0f9f61f73e6bded17c00c214cdde80f8ac9f0512"
+   }
+  ]
+ },
+ {
+  "tag_name": "v1.122.1",
+  "name": "koboldcpp-1.122.1",
+  "prerelease": false,
+  "draft": false,
+  "published_at": "2026-09-26T09:05:10Z",
+  "html_url": "https://github.com/LostRuins/koboldcpp/releases/tag/v1.122.1",
+  "body": "# koboldcpp-1.122.1\r\n\r\nhttps://github.com/user-attachments/assets/8f9448d8-8e35-4269-bae9-c3122bdfb8c3\r\n\r\n\r\n### ***[PSA: KoboldCpp needs YOUR help to fight a fake phishing site (click here for info)](https://github.com/LostRuins/koboldcpp/discussions/2499)!***\r\n\r\n- **NEW: Added an integrated KoboldCpp Agent** - KoboldCpp now ships with a bundled Agentic harness. This works like an extremely lightweight replacement for tools like **Opencode, Codex or Claude Code**. Comes with 9 built-in tools, and a tiny system prompt of **only 2k tokens including all tools**. \r\n  - To use it, simply enable it ",
+  "assets": [
+   {
+    "name": "koboldcpp-linux-x64",
+    "size": 641836648,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-linux-x64",
+    "digest": "sha256:724b81ad4d0557e6cf6b1e634c1b973e9a56c0a99b5164a9cf1ecbb8c9ad53d8"
+   },
+   {
+    "name": "koboldcpp-linux-x64-nocuda",
+    "size": 136689280,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-linux-x64-nocuda",
+    "digest": "sha256:5532ead66f460a59c744fc74a45715bf2b0ef2fe2fb05a6c146a6d2df2145d29"
+   },
+   {
+    "name": "koboldcpp-linux-x64-oldpc",
+    "size": 490292328,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-linux-x64-oldpc",
+    "digest": "sha256:04716cc1e871803e41b1475a4471655a8390b102086741f8d107ceda74c6cdbe"
+   },
+   {
+    "name": "koboldcpp-mac-arm64",
+    "size": 67057424,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-mac-arm64",
+    "digest": "sha256:4dc85e7f0414812ec5b1fd810b2009a73844ff17347edac41ff85ffe7fc70412"
+   },
+   {
+    "name": "koboldcpp-nocuda.exe",
+    "size": 117328777,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-nocuda.exe",
+    "digest": "sha256:c314724e02b310c4db066a8dade8890a1628bc4b65aa9c2b658309219ca7a779"
+   },
+   {
+    "name": "koboldcpp-oldpc.exe",
+    "size": 461403791,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp-oldpc.exe",
+    "digest": "sha256:cb20441996534e381f23a8fb41ce86d3b951c272292cceceb164fae86bc9837c"
+   },
+   {
+    "name": "koboldcpp.exe",
+    "size": 636192312,
+    "browser_download_url": "https://github.com/LostRuins/koboldcpp/releases/download/v1.122.1/koboldcpp.exe",
+    "digest": "sha256:c0955f60aac10d139cfdb3ffbd73ad5c7045bfff32656b4a971363d08ff31289"
+   }
+  ]
+ }
+]

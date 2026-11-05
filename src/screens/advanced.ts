@@ -1,7 +1,8 @@
 // Advanced setup: system-settings style pages, multi-GPU split and the matching command line.
 
 import { $, h, select, toggle, toast, type Kid } from "../dom";
-import { setStatus } from "../fit";
+import { sampleConfig } from "../data";
+import { isActive, launch } from "../server";
 import { S, render } from "../state";
 
 const ICONS: Record<string, string> = {
@@ -113,8 +114,8 @@ export function renderAdvanced() {
 
   pane.append(h("div", { class: "btns" },
     h("button", { onclick: () => toast("Saved as preset") }, "Save as preset"),
-    h("button", { class: "primary", onclick: () => { S.running = "Qwen3.8 27B"; setStatus(); render(); toast("Server started with these settings"); } },
-      S.running ? "Restart server" : "Start server")));
+    h("button", { class: "primary", onclick: () => launch("Qwen3.8 27B", sampleConfig("Qwen3.8-27B-Q4_K_M")) },
+      isActive() ? "Restart server" : "Start server")));
   return root;
 }
 

@@ -9,8 +9,9 @@ import "./styles.css";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
 import { openSources } from "./dialogs/sources";
-import { drawUpdBtn, openUpdate } from "./dialogs/update";
-import { setStatus } from "./fit";
+import { api } from "./api";
+import { drawUpdBtn, openUpdate, refreshBinary } from "./dialogs/update";
+import { initServer, setStatus } from "./server";
 import { renderAdvanced } from "./screens/advanced";
 import { renderLibrary } from "./screens/library";
 import { renderStart } from "./screens/start";
@@ -43,7 +44,7 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && $("#dialogRoot")!.firstChild && S.upd.state !== "working") {
+  if (e.key === "Escape" && $("#dialogRoot")!.firstChild && !$('#dialogRoot [data-busy="1"]')) {
     $("#dialogRoot")!.replaceChildren();
     render();
   }
@@ -52,9 +53,20 @@ document.addEventListener("keydown", (e) => {
 $("#openSources")!.addEventListener("click", openSources);
 $("#updBtn")!.addEventListener("click", openUpdate);
 drawUpdBtn();
-setTimeout(() => {
-  if (S.upd.onStart && S.upd.ver !== S.upd.latest) toast(`KoboldCpp ${S.upd.latest} is available. Use the button at the top to update.`);
-}, 700);
+initServer();
+
+async function init() {
+  try {
+    S.settings = await api.settings();
+  } catch {
+    /* defaults */
+  }
+  await refreshBinary(!!S.settings?.checkUpdatesOnStart);
+  if (S.binary && !S.binary.present) toast("KoboldCpp is not installed yet. Use the button at the top to install it.");
+  else if (S.update?.updateAvailable && S.update.latest) toast(`KoboldCpp ${S.update.latest.tag} is available. Use the button at the top to update.`);
+  render();
+}
+init();
 
 addEventListener("hashchange", render);
 render();

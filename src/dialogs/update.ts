@@ -1,83 +1,149 @@
-// Update button and dialog (simulated; will check GitHub releases later).
+// KoboldCpp install/update: top-bar button and dialog, backed by GitHub releases.
 
+import { api, fmtBytes, on, type Progress } from "../api";
 import { $, h, toggle, toast } from "../dom";
 import { S, render } from "../state";
 
 export const REPO = "https://github.com/LostRuins/koboldcpp";
 
+const installed = () => S.binary?.installed && S.binary.present;
+
 export function drawUpdBtn() {
-  const U = S.upd;
   const b = $("#updBtn")!;
-  const has = U.ver !== U.latest;
-  b.className = "upd " + (has ? "new" : "ok");
-  b.textContent = has ? `Update to ${U.latest}` : "Up to date";
-  $("#verLabel")!.textContent = U.ver;
+  const ver = S.binary?.installed?.version;
+  $("#verLabel")!.textContent = installed() ? ver ?? "custom build" : "not installed";
+  if (!installed()) {
+    b.className = "upd new";
+    b.textContent = S.binary?.asset ? "Install KoboldCpp" : "KoboldCpp";
+  } else if (S.update?.updateAvailable && S.update.latest) {
+    b.className = "upd new";
+    b.textContent = `Update to ${S.update.latest.tag}`;
+  } else {
+    b.className = "upd ok";
+    b.textContent = S.update ? "Up to date" : "Check for updates";
+  }
+}
+
+export async function refreshBinary(check: boolean) {
+  try {
+    S.binary = await api.binaryStatus();
+    if (check) S.update = await api.checkUpdate();
+  } catch (e) {
+    S.updateError = String(e);
+  }
+  drawUpdBtn();
+}
+
+function fmtDate(iso: string | null) {
+  return iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
 }
 
 export function openUpdate() {
   const root = $("#dialogRoot")!;
-  const U = S.upd;
-  const close = () => { if (U.state === "working") return; root.replaceChildren(); render(); };
+  let progress: Progress | null = null;
+  let working = false;
+  let error = "";
+  const close = () => { if (working) return; root.replaceChildren(); render(); };
 
-  const run = () => {
-    const wasRunning = S.running;
-    U.state = "working";
-    U.pct = 0;
-    U.step = "Downloading the new version";
+  const unlisten = on<Progress>("binary-progress", (p) => {
+    progress = p;
+    const f = $("#updFill"), s = $("#updStep");
+    const pct = p.total ? (p.done / p.total) * 100 : 0;
+    if (f) f.style.width = pct + "%";
+    if (s) s.textContent = `Downloading ${fmtBytes(p.done)}${p.total ? " of " + fmtBytes(p.total) : ""}${p.speed ? ` · ${fmtBytes(p.speed)}/s` : ""}`;
+  });
+
+  const run = async () => {
+    working = true;
+    error = "";
     draw();
-    const tick = () => {
-      U.pct = Math.min(100, U.pct + 5 + Math.random() * 8);
-      U.step = U.pct < 70 ? "Downloading the new version" : U.pct < 88 ? "Checking the download" : "Restarting KoboldCpp";
-      const f = $("#updFill"), s = $("#updStep");
-      if (f) f.style.width = U.pct + "%";
-      if (s) s.textContent = U.step;
-      if (U.pct >= 100) {
-        U.ver = U.latest;
-        U.state = "idle";
-        drawUpdBtn();
-        root.replaceChildren();
-        render();
-        toast(`Updated to ${U.ver}` + (wasRunning ? `. ${wasRunning} is running again.` : ""));
-        return;
-      }
-      setTimeout(tick, 160);
-    };
-    setTimeout(tick, 160);
+    try {
+      const b = await api.installBinary(S.update?.latest?.tag);
+      await refreshBinary(false);
+      if (S.update) S.update = { ...S.update, current: b.version, updateAvailable: false };
+      working = false;
+      unlisten();
+      root.replaceChildren();
+      drawUpdBtn();
+      render();
+      toast(`KoboldCpp ${b.version ?? ""} installed` + (S.running ? `. ${S.running} is running again.` : ""));
+    } catch (e) {
+      working = false;
+      error = String(e);
+      draw();
+    }
+  };
+
+  const check = async () => {
+    error = "";
+    try {
+      S.update = await api.checkUpdate();
+      drawUpdBtn();
+      if (!S.update.updateAvailable) toast("Checked GitHub: no newer release");
+    } catch (e) {
+      error = String(e);
+    }
+    draw();
+  };
+
+  const saveSetting = async (patch: Partial<NonNullable<typeof S.settings>>) => {
+    if (!S.settings) return;
+    S.settings = await api.saveSettings({ ...S.settings, ...patch });
   };
 
   function draw() {
-    const has = U.ver !== U.latest;
+    const U = S.update;
+    const has = !installed() || !!U?.updateAvailable;
+    const latest = U?.latest;
     const link = (href: string, text: string, style = "color:var(--accent-text)") => h("a", { href, target: "_blank", rel: "noopener", style }, text);
-    const body = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "updTitle", style: "width:min(560px,100%)" });
+    const title = !installed()
+      ? "Install KoboldCpp"
+      : has && latest ? `KoboldCpp ${latest.tag} is available` : "You're up to date";
+    const sub = !installed()
+      ? S.binary?.asset
+        ? `The launcher downloads KoboldCpp ${latest?.tag ?? ""} (${S.binary.asset}${latest?.size ? ", " + fmtBytes(latest.size) : ""}) from GitHub and checks it.`
+        : "KoboldCpp has no official build for this computer. Pick a koboldcpp file you built yourself."
+      : has && latest
+        ? `You have ${S.binary?.installed?.version ?? "a custom build"}. Released on GitHub on ${fmtDate(latest.publishedAt)}.`
+        : `KoboldCpp ${S.binary?.installed?.version ?? ""} is the newest release.`;
+
+    const body = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "updTitle", style: "width:min(600px,100%)", "data-busy": working ? "1" : "" });
     body.append(h("div", { style: "display:flex;justify-content:space-between;align-items:flex-start;gap:12px" },
-      h("div", {},
-        h("h2", { id: "updTitle" }, has ? `KoboldCpp ${U.latest} is available` : "You're up to date"),
-        h("p", {}, has ? `You have ${U.ver}. Released on GitHub on ${U.date}.` : `KoboldCpp ${U.ver} is the newest release.`)),
-      U.state === "working" ? null : h("button", { class: "ghost", "aria-label": "Close", onclick: close }, "Close")));
-    if (has)
+      h("div", {}, h("h2", { id: "updTitle" }, title), h("p", {}, sub)),
+      working ? null : h("button", { class: "ghost", "aria-label": "Close", onclick: close }, "Close")));
+
+    if (has && latest?.notes)
       body.append(h("div", { class: "notes" }, h("strong", {}, "What's new"),
-        h("ul", {}, h("li", {}, "The release notes from GitHub appear here."), h("li", {}, "Sample text for now.")),
-        h("div", { style: "margin-top:6px" }, link(`${REPO}/releases/tag/${U.latest}`, "Read the full notes on GitHub"))));
-    if (U.state === "working")
+        h("pre", { class: "relnotes" }, latest.notes.split("\n").slice(0, 40).join("\n")),
+        latest.url ? h("div", { style: "margin-top:6px" }, link(latest.url, "Read the full notes on GitHub")) : null));
+
+    if (working) {
+      const pct = progress?.total ? (progress.done / progress.total) * 100 : 0;
       body.append(h("div", { class: "prog" },
-        h("div", { class: "bar-track" }, h("div", { class: "bar-fill", id: "updFill", style: `width:${U.pct}%` })),
-        h("small", { id: "updStep" }, U.step)));
-    else if (has)
+        h("div", { class: "bar-track" }, h("div", { class: "bar-fill", id: "updFill", style: `width:${pct}%` })),
+        h("small", { id: "updStep" }, "Starting download")));
+    } else if (has && installed()) {
       body.append(h("p", {}, S.running
         ? `${S.running} stops while updating and starts again afterwards. Your models, presets and sources stay as they are.`
         : "Your models, presets and sources stay as they are."));
-    body.append(h("div", { style: "display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px" },
-      toggle("updStart", U.onStart, (v) => { U.onStart = v; }, "Check for updates when the app starts"),
-      toggle("updPre", U.pre, (v) => { U.pre = v; toast(v ? "Pre-releases included" : "Stable releases only"); }, "Include pre-releases")));
+    }
+    if (error || S.updateError) body.append(h("p", { class: "err" }, error || S.updateError));
+
+    if (S.settings)
+      body.append(h("div", { style: "display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px" },
+        toggle("updStart", S.settings.checkUpdatesOnStart, (v) => saveSetting({ checkUpdatesOnStart: v }), "Check for updates when the app starts"),
+        toggle("updPre", S.settings.includePrereleases, async (v) => { await saveSetting({ includePrereleases: v }); await check(); }, "Include pre-releases")));
+
     const btns = h("div", { class: "btns" });
-    if (U.state !== "working") {
-      if (has)
+    if (!working) {
+      if (has && S.binary?.asset && latest)
         btns.append(link(`${REPO}/releases`, "View on GitHub", "align-self:center;font-size:13px;color:var(--accent-text);margin-right:auto"),
-          h("button", { onclick: close }, "Later"),
-          h("button", { class: "primary", onclick: run }, "Update now"));
+          ...(installed() ? [h("button", { onclick: close }, "Later")] : []),
+          h("button", { class: "primary", onclick: run }, installed() ? "Update now" : "Download and install"));
       else
-        btns.append(h("button", { onclick: () => toast("Checked GitHub: no newer release") }, "Check now"),
-          h("button", { class: "primary", onclick: close }, "Done"));
+        btns.append(h("button", { onclick: check }, "Check now"), h("button", { class: "primary", onclick: close }, "Done"));
+    } else {
+      btns.append(h("button", { onclick: () => api.cancelInstall() }, "Cancel"));
     }
     body.append(btns);
     const scrim = h("div", { class: "scrim", onclick: (e: Event) => { if (e.target === scrim) close(); } }, body);
@@ -85,4 +151,5 @@ export function openUpdate() {
   }
 
   draw();
+  if (!S.update) check();
 }

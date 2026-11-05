@@ -73,3 +73,6 @@ export const DRIVES: Record<DriveId, { label: string; free: number; total: numbe
   C: { label: "C: internal SSD", free: 410, total: 1000 },
   E: { label: "E: external archive", free: 160, total: 2000 },
 };
+
+/** Placeholder config for sample entries; real configs come from templates and the library. */
+export const sampleConfig = (label: string): Record<string, unknown> => ({ model_param: `${label}.gguf` });

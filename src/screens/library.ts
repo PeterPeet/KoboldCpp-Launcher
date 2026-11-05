@@ -3,7 +3,9 @@
 import { DRIVES, LOCAL, type DriveId } from "../data";
 import { $, checkbox, gb, h, toast, type Kid } from "../dom";
 import { openSources } from "../dialogs/sources";
-import { goControl, popular, setStatus, startDownload } from "../fit";
+import { goControl, popular, startDownload } from "../fit";
+import { launch, stop } from "../server";
+import { sampleConfig } from "../data";
 import { S, render } from "../state";
 
 export function renderLibrary() {
@@ -103,12 +105,7 @@ function renderLibGrid() {
       acts.append(
         h("button", {
           class: S.running === m.name ? "" : "primary",
-          onclick: () => {
-            S.running = S.running === m.name ? null : m.name;
-            setStatus();
-            renderLibGrid();
-            toast(S.running ? `${m.name} is running` : "Server stopped");
-          },
+          onclick: () => (S.running === m.name ? stop() : launch(m.name, sampleConfig(m.name))),
         }, S.running === m.name ? "Stop" : "Start"),
         h("button", { onclick: () => { m.drive = other; render(); toast(`${m.name} moved to ${DRIVES[other].label}`); } }, `Move to ${other}:`),
         h("button", { class: "ghost", onclick: () => { L.confirm = m.id; renderLibGrid(); } }, "Remove"));
