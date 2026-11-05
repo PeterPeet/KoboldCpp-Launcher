@@ -46,11 +46,28 @@ export function applyFlavor() {
   import("@tauri-apps/api/window").then((w) => w.getCurrentWindow().setTitle(title)).catch(() => {});
 }
 
-/** The way in: a short flicker, then the new colors (skipped with reduced motion). */
+/** The way in: a short flicker, then the new colors (skipped with reduced motion). Each call
+ *  cancels a flicker still running, so quick on/off/on never leaves an old one half-finished
+ *  (a filter cut off mid-way can stay on screen in WebKit). */
+let flicker: Animation | null = null;
+const ENTER: Keyframe[] = [
+  { offset: 0, filter: "none", transform: "none" },
+  { offset: 0.12, filter: "hue-rotate(140deg) contrast(1.8) brightness(1.4)", transform: "translateX(-4px)" },
+  { offset: 0.2, filter: "invert(1) hue-rotate(180deg)", transform: "translateX(5px) skewX(-2deg)" },
+  { offset: 0.28, filter: "brightness(0.2)", transform: "none" },
+  { offset: 0.4, filter: "hue-rotate(90deg) saturate(2)", transform: "translateX(-2px)" },
+  { offset: 0.55, filter: "brightness(0.6) contrast(1.3)", transform: "none" },
+  { offset: 1, filter: "none", transform: "none" },
+];
+const LEAVE: Keyframe[] = [{ filter: "brightness(0.3) saturate(0)" }, { filter: "none" }];
+
 export function enterAnimation(on: boolean) {
-  const root = document.documentElement;
-  root.classList.remove("eso-enter", "eso-leave");
-  void root.offsetWidth;
-  root.classList.add(on ? "eso-enter" : "eso-leave");
-  window.setTimeout(() => root.classList.remove("eso-enter", "eso-leave"), 900);
+  flicker?.cancel();
+  flicker = null;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || !document.body.animate) return;
+  const a = document.body.animate(on ? ENTER : LEAVE, { duration: on ? 850 : 600, easing: "ease-out", fill: "none" });
+  flicker = a;
+  a.onfinish = a.oncancel = () => {
+    if (flicker === a) flicker = null;
+  };
 }

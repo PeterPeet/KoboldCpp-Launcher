@@ -317,16 +317,4 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .eso-switch{justify-self:start;gap:10px;font-weight:600}
 .switch input:disabled{opacity:.4;cursor:not-allowed}
 
-/* Entering Esobold: a short flicker, like stepping somewhere you shouldn't be. */
-@keyframes esoEnter{
-  0%{filter:none;transform:none}
-  12%{filter:hue-rotate(140deg) contrast(1.8) brightness(1.4);transform:translateX(-4px)}
-  20%{filter:invert(1) hue-rotate(180deg);transform:translateX(5px) skewX(-2deg)}
-  28%{filter:brightness(.2);transform:none}
-  40%{filter:hue-rotate(90deg) saturate(2);transform:translateX(-2px)}
-  55%{filter:brightness(.6) contrast(1.3)}
-  100%{filter:none;transform:none}}
-@keyframes esoLeave{0%{filter:brightness(.3) saturate(0)}100%{filter:none}}
-html.eso-enter body{animation:esoEnter .85s ease-out}
-html.eso-leave body{animation:esoLeave .6s ease-out}
-@media (prefers-reduced-motion:reduce){html.eso-enter body,html.eso-leave body{animation:none}}
+/* Entering Esobold: the flicker runs in flavor.ts (Web Animations, cancels a running one). */
