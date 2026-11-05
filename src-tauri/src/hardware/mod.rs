@@ -60,8 +60,9 @@ pub struct HardwareInfo {
     /// Apple Silicon: GPU and CPU share RAM.
     pub unified_memory: bool,
     pub gpus: Vec<Gpu>,
-    /// Main memory bandwidth in GB/s (estimate; on Apple Silicon the same as the GPU's).
-    pub ram_bandwidth: f64,
+    /// Main memory bandwidth in GB/s (on Apple Silicon the same as the GPU's); `None` when the
+    /// system doesn't report the memory type and rate.
+    pub ram_bandwidth: Option<f64>,
     /// Memory type and rate as the system reports it, e.g. "DDR4-3200" or "LPDDR5".
     pub ram_type: Option<String>,
     pub suggested_backend: Backend,
@@ -235,14 +236,13 @@ pub fn detect() -> HardwareInfo {
     let unified = gpus.iter().any(|g| g.api == GpuApi::Metal);
     let best_vram = gpus.iter().map(|g| g.vram).max().unwrap_or(0);
     let ram = detect_ram();
-    // Apple Silicon: the chip table (CPU and GPU share the memory). Otherwise from the modules,
-    // and when the system won't say: dual-channel DDR4/DDR5 (~60 GB/s).
+    // Apple Silicon: the chip table (CPU and GPU share the memory). Otherwise from the modules;
+    // unknown when the system won't say (no guessed value).
     let ram_bandwidth = gpus
         .iter()
         .find(|g| g.api == GpuApi::Metal)
         .and_then(|g| g.bandwidth)
-        .or_else(|| ram.as_ref().and_then(|r| r.bandwidth(&cpu_name)))
-        .unwrap_or(60.0);
+        .or_else(|| ram.as_ref().and_then(|r| r.bandwidth(&cpu_name)));
     HardwareInfo {
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),

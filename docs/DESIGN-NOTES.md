@@ -173,8 +173,10 @@ First full version built in six phases (commits on `main`). Decisions made on th
   RAM bandwidth: Apple Silicon from the chip table; otherwise from the reported memory type,
   rate and module count (Windows `Win32_PhysicalMemory`, Linux `dmidecode -t 17` (root only),
   Intel Macs `system_profiler SPMemoryDataType`): MT/s × 8 bytes × channels (desktop max 2,
-  Threadripper/Xeon/EPYC max 8; soldered LPDDR = 128-bit bus). Unknown → 60 GB/s. The CPU chip
-  shows the type, e.g. "32 GB DDR4-3200 RAM".
+  Threadripper/Xeon/EPYC max 8; soldered LPDDR = 128-bit bus). The CPU chip shows the type,
+  e.g. "32 GB DDR4-3200 RAM". No guessed values: an unknown RAM type shows "RAM (type N/A)", and
+  when a bandwidth the estimate needs is unknown (RAM for CPU layers, an unlisted discrete GPU)
+  the speed shows "N/A" until a measured speed exists. Integrated GPUs use the RAM bandwidth.
   Calibrated on an M2 (4B Q4 ≈ 15–20 t/s; measured 13.3) and RTX 4090 (8B Q4 ≈ 110 t/s).
   While a model runs, `/api/extra/perf` `last_eval_speed` is recorded per model file (answers of
   16+ tokens) and shown as "measured" instead of the estimate. Library sorts by speed (measured

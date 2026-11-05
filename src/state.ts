@@ -57,13 +57,15 @@ export const machine = (context = 16384): Machine => ({ vram: vram(), ram: S.hw?
 /** Bandwidths of the selected GPUs: layers run one after another, so time adds up per share. */
 function speedHw(): Machine["speed"] {
   const hw = S.hw;
-  const cpu = hw?.ramBandwidth ?? 60;
+  // Unknown values stay unknown (null): the estimate then says N/A instead of guessing.
+  const cpu = hw?.ramBandwidth ?? null;
   const sel = (hw?.gpus ?? []).filter((_, i) => S.useGpu[i] !== false);
   const total = sel.reduce((a, g) => a + g.vram, 0);
-  if (!hw || !total) return { gpuBandwidth: 0, cpuBandwidth: cpu, apple: !!hw?.unifiedMemory };
-  // Unknown cards: a middle value (discrete) or main memory (integrated).
-  const bw = (g: (typeof sel)[number]) => g.bandwidth ?? (g.discrete ? 300 : cpu);
-  const secPerByte = sel.reduce((a, g) => a + g.vram / total / bw(g), 0);
+  if (!hw || !total) return { gpuBandwidth: null, cpuBandwidth: cpu, apple: !!hw?.unifiedMemory };
+  // Integrated GPUs use main memory, so theirs is the RAM bandwidth.
+  const bws = sel.map((g) => g.bandwidth ?? (g.discrete ? null : cpu));
+  if (bws.some((b) => !b)) return { gpuBandwidth: null, cpuBandwidth: cpu, apple: hw.unifiedMemory };
+  const secPerByte = sel.reduce((a, g, i) => a + g.vram / total / bws[i]!, 0);
   return { gpuBandwidth: 1 / secPerByte, cpuBandwidth: cpu, apple: hw.unifiedMemory };
 }
 

@@ -432,8 +432,8 @@ pub struct PopularItem {
     pub mmproj_downloaded: bool,
     /// The repo ships MTP layers (see `RepoFiles::mtp`).
     pub mtp: bool,
-    /// Estimated generation speed on this PC (tokens/s).
-    pub tps: f64,
+    /// Estimated generation speed on this PC (tokens/s); `None` when a bandwidth it needs is unknown.
+    pub tps: Option<f64>,
     /// Speed KoboldCpp reported for this file here, if it has run before.
     pub measured: Option<f64>,
 }
@@ -885,8 +885,8 @@ pub struct LocalFit {
     pub gpu_layers: u32,
     /// Estimated memory while running (bytes) at the given context.
     pub memory: u64,
-    /// Estimated generation speed (tokens/s).
-    pub tps: f64,
+    /// Estimated generation speed (tokens/s); `None` when a bandwidth it needs is unknown.
+    pub tps: Option<f64>,
     /// Speed KoboldCpp reported for this file, if it has run here.
     pub measured: Option<f64>,
 }

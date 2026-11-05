@@ -200,10 +200,10 @@ pub fn runtime_memory(model: &ModelShape, extras: &Extras, s: &Settings) -> u64 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SpeedHw {
-    /// GB/s of the selected GPU(s); 0 = no GPU.
-    pub gpu_bandwidth: f64,
-    /// GB/s of main memory.
-    pub cpu_bandwidth: f64,
+    /// GB/s of the selected GPU(s); `None` = no GPU or a GPU whose bandwidth we don't know.
+    pub gpu_bandwidth: Option<f64>,
+    /// GB/s of main memory; `None` when the system doesn't report the memory type and rate.
+    pub cpu_bandwidth: Option<f64>,
     /// Apple Silicon (Metal): different efficiency than discrete GPUs.
     pub apple: bool,
 }
@@ -234,14 +234,15 @@ pub fn active_ratio(name: &str) -> f64 {
 /// Estimated generation speed (tokens/s). Each token reads the (active) weights once, so the time
 /// per token is bytes ÷ usable bandwidth for the GPU and CPU shares, plus a small fixed cost.
 /// Calibrated on: Apple M2 + 4B Q4 ≈ 13–20 t/s, RTX 4090 + 8B Q4 ≈ 110 t/s.
-pub fn estimate_tps(size: u64, active: f64, gpu_share: f64, hw: &SpeedHw) -> f64 {
+/// `None` when a bandwidth the model needs is unknown: no guessed numbers.
+pub fn estimate_tps(size: u64, active: f64, gpu_share: f64, hw: &SpeedHw) -> Option<f64> {
     let gb = size as f64 / GIB * active;
-    let gpu_share = if hw.gpu_bandwidth > 0.0 { gpu_share.clamp(0.0, 1.0) } else { 0.0 };
+    let gpu_share = gpu_share.clamp(0.0, 1.0);
     let (eff_gpu, overhead) = if hw.apple { (0.6, 0.006) } else { (0.7, 0.002) };
-    let gpu_t = if gpu_share > 0.0 { gb * gpu_share / (hw.gpu_bandwidth * eff_gpu) } else { 0.0 };
-    let cpu_t = gb * (1.0 - gpu_share) / (hw.cpu_bandwidth.max(10.0) * 0.5);
+    let gpu_t = if gpu_share > 0.0 { gb * gpu_share / (hw.gpu_bandwidth.filter(|&b| b > 0.0)? * eff_gpu) } else { 0.0 };
+    let cpu_t = if gpu_share < 1.0 { gb * (1.0 - gpu_share) / (hw.cpu_bandwidth.filter(|&b| b > 0.0)? * 0.5) } else { 0.0 };
     let t = gpu_t + cpu_t + if gpu_share < 1.0 { 0.006 } else { overhead };
-    1.0 / t
+    Some(1.0 / t)
 }
 
 /// Quants we prefer, best first (design notes: beginners don't choose).
@@ -384,14 +385,21 @@ mod tests {
 
     #[test]
     fn speed_estimates_are_plausible() {
-        let m2 = SpeedHw { gpu_bandwidth: 100.0, cpu_bandwidth: 100.0, apple: true };
-        let t = estimate_tps((2.7 * GIB) as u64, 1.0, 1.0, &m2);
+        let m2 = SpeedHw { gpu_bandwidth: Some(100.0), cpu_bandwidth: Some(100.0), apple: true };
+        let t = estimate_tps((2.7 * GIB) as u64, 1.0, 1.0, &m2).unwrap();
         assert!((12.0..=25.0).contains(&t), "M2, 4B Q4: {t}");
-        let g4090 = SpeedHw { gpu_bandwidth: 1008.0, cpu_bandwidth: 60.0, apple: false };
-        let t = estimate_tps((4.9 * GIB) as u64, 1.0, 1.0, &g4090);
+        let g4090 = SpeedHw { gpu_bandwidth: Some(1008.0), cpu_bandwidth: Some(60.0), apple: false };
+        let t = estimate_tps((4.9 * GIB) as u64, 1.0, 1.0, &g4090).unwrap();
         assert!((90.0..=140.0).contains(&t), "4090, 8B Q4: {t}");
         // half on the CPU is much slower
-        assert!(estimate_tps((16.0 * GIB) as u64, 1.0, 0.5, &g4090) < 10.0);
+        assert!(estimate_tps((16.0 * GIB) as u64, 1.0, 0.5, &g4090).unwrap() < 10.0);
+        // unknown RAM bandwidth: fully on the GPU still has an estimate, anything on the CPU not
+        let no_ram = SpeedHw { cpu_bandwidth: None, ..g4090 };
+        assert!(estimate_tps((4.9 * GIB) as u64, 1.0, 1.0, &no_ram).is_some());
+        assert_eq!(estimate_tps((16.0 * GIB) as u64, 1.0, 0.5, &no_ram), None);
+        // unknown GPU: no estimate for anything on it
+        let no_gpu_bw = SpeedHw { gpu_bandwidth: None, ..g4090 };
+        assert_eq!(estimate_tps((4.9 * GIB) as u64, 1.0, 1.0, &no_gpu_bw), None);
         // MoE: only active experts are read
         assert!((active_ratio("Qwen3-30B-A3B-Instruct") - 0.1).abs() < 1e-9);
         assert_eq!(active_ratio("Qwen3-8B"), 1.0);

@@ -54,13 +54,13 @@ const SORTS: [string, string][] = [["speed", "Speed (measured first)"], ["used",
 function sortModels(items: LocalModel[]) {
   const runs = (m: LocalModel) => (runStatus(m, fits[m.path]).start === "no" ? 1 : 0);
   const by: Record<string, (a: LocalModel, b: LocalModel) => number> = {
-    // Measured speeds first (fastest on top), then estimates, then models without a speed
-    // (image, voice, embedding).
+    // Measured speeds first (fastest on top), then estimates, then text models whose speed is
+    // N/A, then models without a speed (image, voice, embedding).
     speed: (a, b) => {
       const rank = (m: LocalModel) => {
-        if (!(m.kind === "Text" || m.kind === "Vision")) return [2, 0];
+        if (!(m.kind === "Text" || m.kind === "Vision")) return [3, 0];
         const f = fits[m.path];
-        return f?.measured ? [0, f.measured] : [1, f?.tps ?? 0];
+        return f?.measured ? [0, f.measured] : f?.tps != null ? [1, f.tps] : [2, 0];
       };
       const [ga, va] = rank(a), [gb, vb] = rank(b);
       return ga - gb || vb - va;
@@ -398,7 +398,7 @@ function renderLibGrid() {
       kv("Layers", m.layers ?? "–"),
       m.format === "gguf" && (m.kind === "Text" || m.kind === "Vision")
         ? h("div", { class: "kv", title: fits[m.path]?.measured ? "Measured by KoboldCpp on this computer (last answer)" : "Estimated from this computer's memory bandwidth and the model size" },
-            h("span", {}, "Speed"), h("span", {}, fits[m.path] ? speedText(fits[m.path].tps, fits[m.path].measured).replace(" tokens/s", " t/s") : "…"))
+            h("span", {}, "Speed"), h("span", {}, fits[m.path] ? speedText(fits[m.path].tps, fits[m.path].measured).replace(" tokens/s", " t/s").replace("speed N/A", "N/A") : "…"))
         : null,
       kv("Drive", m.drive === "/" ? "System disk" : m.drive ?? "–"),
       kv("Last used", ago(m.lastUsed)),

@@ -81,7 +81,8 @@ export function mockSearch(q: string, m: Machine, sources: Source[]): PopularRes
 /** Same idea as fit::estimate_tps, roughly. */
 export function mockTps(size: number, m: Machine) {
   const gb = size / GB;
-  const bw = m.speed.gpuBandwidth || m.speed.cpuBandwidth * 0.7;
+  const bw = m.speed.gpuBandwidth ?? (m.speed.cpuBandwidth ? m.speed.cpuBandwidth * 0.7 : null);
+  if (!bw) return null;
   return 1 / (gb / (bw * (m.speed.apple ? 0.6 : 0.7)) + (m.speed.apple ? 0.006 : 0.002));
 }
 

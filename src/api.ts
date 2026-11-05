@@ -17,7 +17,7 @@ export type Backend =
 export interface Gpu { index: number; name: string; api: "cuda" | "rocm" | "vulkan" | "metal"; vram: number; vramFree: number | null; discrete: boolean; bandwidth: number | null }
 export interface HardwareInfo {
   os: string; arch: string; cpuName: string; logicalCpus: number; defaultThreads: number; avx2: boolean | null;
-  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; ramBandwidth: number; ramType: string | null; suggestedBackend: Backend; tier: "low" | "mid" | "high";
+  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; ramBandwidth: number | null; ramType: string | null; suggestedBackend: Backend; tier: "low" | "mid" | "high";
 }
 export interface InstalledBinary { path: string; version: string | null; asset: string | null }
 export interface BinaryStatus { installed: InstalledBinary | null; present: boolean; asset: string | null }
@@ -58,7 +58,7 @@ export interface PopularItem extends Ranked {
   /** The repo ships MTP layers (faster answers with --usemtp). */
   mtp: boolean;
   /** Estimated tokens/s here; `measured` when KoboldCpp already ran this file here. */
-  tps: number; measured: number | null;
+  tps: number | null; measured: number | null;
 }
 export type SortOrder = "trending" | "downloads" | "likes" | "newest";
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
@@ -72,7 +72,7 @@ export interface Source {
 export interface Machine {
   vram: number; ram: number; unified: boolean; context: number;
   /** Memory bandwidths (GB/s) for the speed estimate. */
-  speed: { gpuBandwidth: number; cpuBandwidth: number; apple: boolean };
+  speed: { gpuBandwidth: number | null; cpuBandwidth: number | null; apple: boolean };
 }
 export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector";
 export interface LocalModel {
@@ -85,7 +85,7 @@ export interface LocalModel {
   /** The file has MTP layers (faster answers with --usemtp). */
   mtp: boolean;
 }
-export interface LocalFit { fit: Fit; gpuLayers: number; memory: number; tps: number; measured: number | null }
+export interface LocalFit { fit: Fit; gpuLayers: number; memory: number; tps: number | null; measured: number | null }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
 export interface LibraryFolder { path: string; recursive: boolean }
 export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: LibraryFolder[]; modelsDir: string }
@@ -138,7 +138,7 @@ const mockHardware: HardwareInfo = {
     { index: 0, name: "NVIDIA GeForce RTX 4090", api: "cuda", vram: 24 * GB, vramFree: 23 * GB, discrete: true, bandwidth: 1008 },
     { index: 1, name: "NVIDIA GeForce RTX 3060", api: "cuda", vram: 12 * GB, vramFree: 11.5 * GB, discrete: true, bandwidth: 360 },
   ],
-  ramBandwidth: 60,
+  ramBandwidth: 100,
   ramType: null,
   suggestedBackend: { kind: "cuda", gpu: null, lowvram: false, mmq: true }, tier: "high",
 };
