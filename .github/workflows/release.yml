@@ -70,7 +70,9 @@ jobs:
 
             On first start the launcher installs the matching official KoboldCpp release for you.
 
-            The installers are not signed yet. macOS: right-click the app › **Open** the first time. Windows: **More info › Run anyway** in the SmartScreen warning.
+            The installers are not signed with an Apple or Microsoft certificate yet, so the system asks once:
+            - **macOS:** open the app, click **Done** when macOS can't verify the developer, then **System Settings › Privacy & Security › Open Anyway** (bottom of the page) and confirm.
+            - **Windows:** **More info › Run anyway** in the SmartScreen warning.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

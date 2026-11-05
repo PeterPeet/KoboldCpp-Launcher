@@ -17,8 +17,12 @@ Get the installer for your system from [Releases](https://github.com/PeterPeet/K
 macOS (Apple Silicon), Windows and Linux (x86_64 and arm64). On first start the launcher installs the
 matching official KoboldCpp release for you.
 
-The installers are not signed yet. On macOS, right-click the app and choose **Open** the first
-time. On Windows, click **More info › Run anyway** in the SmartScreen warning.
+The installers are not signed with an Apple or Microsoft certificate yet, so the system asks once:
+
+- **macOS:** drag the app to Applications and open it. When macOS says it can't verify the
+  developer, click **Done**, then open **System Settings › Privacy & Security**, scroll down and
+  click **Open Anyway** next to "KoboldCpp Launcher", and confirm. After that it opens normally.
+- **Windows:** in the SmartScreen warning, click **More info › Run anyway**.
 
 ## What it does
 
