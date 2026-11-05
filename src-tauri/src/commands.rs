@@ -847,6 +847,8 @@ pub struct LocalFit {
     pub fit: fit::Fit,
     /// Layers KoboldCpp would put on the GPU (0 when unknown or CPU only).
     pub gpu_layers: u32,
+    /// Estimated memory while running (bytes) at the given context.
+    pub memory: u64,
 }
 
 /// Fit of local models using their GGUF layout (KoboldCpp's layer estimate).
@@ -859,7 +861,7 @@ pub fn fit_local(items: Vec<LocalFitInput>, machine: Machine) -> Vec<LocalFit> {
             let shape = fit::ModelShape { size: i.size, layers: i.layers, head_count_kv: i.head_count_kv, kv_len: i.kv_len };
             let extras = fit::Extras { mmproj: i.mmproj.unwrap_or(0), ..Default::default() };
             let (fit, gpu_layers) = fit::fit_by_layers(&shape, &extras, &s, machine.vram, 0, machine.ram, machine.unified);
-            LocalFit { fit, gpu_layers }
+            LocalFit { fit, gpu_layers, memory: fit::runtime_memory(&shape, &extras, &s) }
         })
         .collect()
 }

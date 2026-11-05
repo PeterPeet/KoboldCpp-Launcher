@@ -395,10 +395,15 @@ function renderLibGrid() {
     const o = getOpts(m.path);
     const optBox = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
       h("label", { class: "opt", for: id, title }, checkbox(id, on, (v) => { set(v); fitKey = ""; loadFits(); }), label);
-    const opts = m.format === "gguf" && (m.mmproj || m.mtp)
+    const textual = m.kind === "Text" || m.kind === "Vision";
+    const mtpBox = m.mtp
+      ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v }))
+      : h("label", { class: "opt off", title: "This model file has no MTP layers. Some newer models (e.g. Qwen 3.5+ from unsloth) have them for faster answers." },
+          h("input", { type: "checkbox", disabled: true, "aria-label": "MTP (not in this model)" }), "MTP");
+    const opts = m.format === "gguf" && textual
       ? h("div", { class: "opts" },
           m.mmproj ? optBox(`vis-${m.path}`, "Vision", "Load the vision file so the model can see images (needs more memory)", o.vision, (v) => setOpts(m.path, { vision: v })) : null,
-          m.mtp ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v })) : null)
+          mtpBox)
       : null;
     grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
       h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),
@@ -406,12 +411,14 @@ function renderLibGrid() {
       h("h4", {}, m.name),
       h("div", { class: "tags" }, [m.sizeLabel, m.quant, m.architecture, m.parts > 1 ? `${m.parts} parts` : null].filter(Boolean).join(" · ")),
       kv("Type", KIND_LABEL[m.kind] + (m.format === "mlx" ? " (MLX)" : m.format === "safetensors" ? " (safetensors)" : "")), kv("Size", fmtBytes(m.size)),
+      m.format === "gguf" ? h("div", { class: "kv", title: "Memory needed while running at 16K context: weights, vision file (if on) and context cache. On a PC with a graphics card this is mostly graphics memory." },
+        h("span", {}, "RAM (estimated)"), h("span", {}, fits[m.path] ? fmtBytes(fits[m.path].memory) : "…")) : null,
       kv("Context", m.contextLength ? `${Math.round(m.contextLength / 1024)}K` : "–"),
       kv("Layers", m.layers ?? "–"),
       kv("Drive", m.drive === "/" ? "System disk" : m.drive ?? "–"),
       kv("Last used", ago(m.lastUsed)),
-      st.detail ? h("div", { class: `runline ${st.level}` }, st.detail) : null,
       opts,
+      st.detail ? h("div", { class: `runline ${st.level}` }, st.detail) : null,
       acts));
   }
   const empty = view.models.length === 0

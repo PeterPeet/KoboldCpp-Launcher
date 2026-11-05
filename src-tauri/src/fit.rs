@@ -180,6 +180,22 @@ pub fn fit_by_layers(model: &ModelShape, extras: &Extras, s: &Settings, vram: u6
     (fit, n)
 }
 
+/// Memory a model needs while running (bytes): weights, extra models, KV cache and compute
+/// buffers. With the GGUF layout the KV cache is exact for f16 (2 × layers × KV heads × head size ×
+/// context × 2 bytes); without it the size-based estimate is used.
+pub fn runtime_memory(model: &ModelShape, extras: &Extras, s: &Settings) -> u64 {
+    let base = model.size as f64 + extras_overhead(extras, s);
+    let cache = match (model.layers, model.head_count_kv, model.kv_len) {
+        (Some(l), Some(h), Some(k)) if l > 0 && h > 0 && k > 0 => {
+            let kv = 2.0 * l as f64 * h as f64 * k as f64 * s.context as f64 * 2.0;
+            // compute buffers grow with batch size; ~0.3 GB + 5 % of the weights is typical
+            kv + 0.3 * GIB + model.size as f64 * 0.05
+        }
+        _ => context_overhead(model.size, s.context) as f64,
+    };
+    (base + cache) as u64
+}
+
 /// Quants we prefer, best first (design notes: beginners don't choose).
 pub const PREFERRED: &[&str] = &["Q6_K", "Q5_K_M", "Q4_K_M"];
 
@@ -316,6 +332,18 @@ mod tests {
     fn apple_unified_memory_is_all_or_nothing() {
         assert_eq!(fit_by_size(10 * G, 16384, 16 * G, 24 * G, true), Fit::Full);
         assert_eq!(fit_by_size(20 * G, 16384, 16 * G, 24 * G, true), Fit::None);
+    }
+
+    #[test]
+    fn runtime_memory_counts_kv_cache() {
+        // 8 GB model, 32 layers, 8 KV heads × 128, 16K context: KV cache = 2×32×8×128×16384×2 B = 2 GiB
+        let shape = ModelShape { size: 8 * G, layers: Some(32), head_count_kv: Some(8), kv_len: Some(128) };
+        let need = runtime_memory(&shape, &Extras::default(), &Settings::default());
+        let expect = 8.0 * GIB + 2.0 * GIB + 0.3 * GIB + 8.0 * GIB * 0.05;
+        assert!((need as f64 - expect).abs() < 1e6, "{need} vs {expect}");
+        // a vision file adds its share
+        let with = runtime_memory(&shape, &Extras { mmproj: G, ..Default::default() }, &Settings::default());
+        assert!(with > need);
     }
 
     #[test]

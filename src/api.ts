@@ -74,7 +74,7 @@ export interface LocalModel {
   /** The file has MTP layers (faster answers with --usemtp). */
   mtp: boolean;
 }
-export interface LocalFit { fit: Fit; gpuLayers: number }
+export interface LocalFit { fit: Fit; gpuLayers: number; memory: number }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
 export interface LibraryFolder { path: string; recursive: boolean }
 export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: LibraryFolder[]; modelsDir: string }
@@ -192,7 +192,7 @@ export const api = {
   exportSources: (path: string) => call<void>("export_sources", { path }),
 
   fitLocal: (items: { size: number; layers: number | null; headCountKv: number | null; kvLen: number | null; mmproj: number | null }[], machine: Machine) =>
-    call<LocalFit[]>("fit_local", { items, machine }, () => import("./mock").then((m) => items.map((i) => ({ fit: m.mockFit(i.size + (i.mmproj ?? 0), machine.context, machine), gpuLayers: (i.layers ?? 0) + 1 })))),
+    call<LocalFit[]>("fit_local", { items, machine }, () => import("./mock").then((m) => items.map((i) => ({ fit: m.mockFit(i.size + (i.mmproj ?? 0), machine.context, machine), gpuLayers: (i.layers ?? 0) + 1, memory: i.size * 1.15 + (i.mmproj ?? 0) + 1.2 * 1024 ** 3 })))),
   library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
   addFolder: (path: string, recursive = true) => call<Settings>("add_library_folder", { path, recursive }, () => (mockSettings = { ...mockSettings, libraryFolders: [...mockSettings.libraryFolders, { path, recursive }] })),
   previewFolder: (path: string, recursive: boolean) =>
