@@ -19,8 +19,7 @@ unchanged.
   copied.
 - **Model sources:** which Hugging Face accounts to use: KoboldCpp templates, the model makers
   (Google, Qwen, Z.ai, DeepSeek, Mistral AI, Meta, OpenAI, NVIDIA), unsloth, bartowski, TheDrummer,
-  anyone. In priority order, each with official, finetune and uncensored switches. Export and
-  import as a file. The start screen's "Top" shows each maker's best fitting model; the order
+  anyone. In priority order; a source that is on shows all its models. Export and import as a file. The start screen's "Top" shows each maker's best fitting model; the order
   menu sorts by downloads, trending, likes or date.
 - **KoboldCpp updates:** installs the right official release for your PC, checks its SHA-256, and
   updates in place (a running model is restarted).

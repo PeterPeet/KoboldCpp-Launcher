@@ -157,18 +157,18 @@ function templatesSection() {
 function popularSection() {
   loadPopular();
   if (!families.length) loadFamilies();
-  const sortSel = h("select", { id: "sortSel", "aria-label": "Order" }, ...SORTS.map(([v, l]) => h("option", { value: v, selected: S.sort === v }, l))) as HTMLSelectElement;
+  const sortSel = h("select", { id: "sortSel", "aria-label": "Hugging Face sorting" }, ...SORTS.map(([v, l]) => h("option", { value: v, selected: S.sort === v }, l))) as HTMLSelectElement;
   sortSel.addEventListener("change", () => { S.sort = sortSel.value as typeof S.sort; render(); });
   const famRow = h("div", { class: "famrow", role: "tablist", "aria-label": "Model family" },
     ...([[null, "Top", ""], ...families] as [string | null, string, string][]).map(([id, label, maker]) =>
       h("button", { role: "tab", "aria-selected": String(S.family === id), title: maker ? `Models from hf.co/${maker} and quants of them` : "The best model of each maker", onclick: () => { S.family = id; render(); } }, label)),
-    h("label", { class: "sortlbl" }, "Order", sortSel));
+    h("label", { class: "sortlbl" }, "Hugging Face sorting:", sortSel));
   const head = h("div", { class: "sec-head" },
     h("div", {},
       h("h2", {}, "Choose from popular models yourself"),
       h("p", {}, S.family === null
-        ? `Each maker's ${SORTS.find((s) => s[0] === S.sort)![1].toLowerCase()} model that fits this PC, from its own Hugging Face account where it has one. Pick a family to see more.`
-        : "From your model sources, in the order you chose. The best quality that fits is picked for you.")));
+        ? `Model source: huggingface.co. Each maker's ${SORTS.find((s) => s[0] === S.sort)![1].toLowerCase()} model that fits this PC.`
+        : "Model source: huggingface.co")));
   const out: HTMLElement[] = [head, famRow];
   const pop = S.popular;
   if (!pop) {
@@ -197,10 +197,6 @@ function popularSection() {
   }
   out.push(list);
   if (pop.errors.length) out.push(h("p", { class: "note", style: "margin:-10px 0 0" }, `Not reachable: ${pop.errors.join("; ")}`));
-  if (S.family !== null && !S.sources.some((s) => s.on && s.comps && (s.comps.finetune || s.comps.unc)))
-    out.push(h("p", { class: "note", style: "margin:-10px 0 0" },
-      "Finetunes are off in all your model sources. ",
-      h("button", { class: "linkbtn", onclick: openSources }, "Turn on bartowski or TheDrummer"), " to see them."));
   const hidden = [pop.tooBig ? `${pop.tooBig} too big for this PC, hidden` : "", pop.dupes ? `${pop.dupes} duplicate upload${pop.dupes > 1 ? "s" : ""} merged` : ""].filter(Boolean).join(" · ");
   out.push(h("div", { class: "foot" },
     h("span", {}, hidden || "Nothing hidden"),

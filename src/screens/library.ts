@@ -8,7 +8,7 @@ import { S, machine, render } from "../state";
 import { famClass, fitPill, kindPill } from "./start";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
-const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
+const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
 
 let view: LibraryView | null = null;
 let loading = false;

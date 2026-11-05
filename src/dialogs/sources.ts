@@ -1,7 +1,7 @@
 // Sources dialog: APT-style list of Hugging Face uploaders with components and priority.
 
 import { api, inTauri } from "../api";
-import { $, checkbox, h, toggle, toast } from "../dom";
+import { $, h, toggle, toast } from "../dom";
 import { S, render } from "../state";
 
 let saveTimer: number | undefined;
@@ -57,12 +57,6 @@ export function openSources() {
       const mid = h("div", {},
         h("div", { class: "nm" }, s.name, s.builtin ? h("span", { class: "pill p-mute", style: "margin-left:6px" }, "Built in") : null),
         h("div", { class: "ds" }, s.desc));
-      if (s.comps) {
-        const c = s.comps;
-        mid.append(h("div", { class: "comps" },
-          ...([["official", "Official"], ["finetune", "Finetunes"], ["unc", "Uncensored"]] as const).map(([k, l]) =>
-            h("label", { for: `c-${s.id}-${k}` }, checkbox(`c-${s.id}-${k}`, c[k], (v) => { c[k] = v; changed(); }, { disabled: !s.on }), l))));
-      }
       const swap = (j: number) => { [S.sources[i], S.sources[j]] = [S.sources[j], S.sources[i]]; changed(); };
       const ord = h("div", { class: "ord" },
         h("button", { "aria-label": `Move ${s.name} up`, disabled: i === 0, onclick: () => swap(i - 1) }, "▲"),
@@ -95,7 +89,7 @@ export function openSources() {
 
     const dlg = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "srcTitle" },
       h("div", { style: "display:flex;justify-content:space-between;align-items:flex-start;gap:12px" },
-        h("div", {}, h("h2", { id: "srcTitle" }, "Sources"), h("p", {}, "Where the app looks for models. Higher sources win when two offer the same model.")),
+        h("div", {}, h("h2", { id: "srcTitle" }, "Sources on huggingface.co"), h("p", {}, "Hugging Face accounts the app takes models from. A source that is on shows all its models. Higher sources win when two offer the same model.")),
         h("button", { class: "ghost", "aria-label": "Close", onclick: close }, "Done")),
       list,
       h("div", { class: "addrow" }, inp, h("button", { onclick: add }, "Add source")),

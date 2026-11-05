@@ -359,15 +359,11 @@ pub fn valid_source_name(n: &str) -> bool {
 }
 
 /// Priority index of the first enabled source that offers this entry with an allowed component.
-pub fn source_index(e: &ModelEntry, sources: &[Source], original: bool, uncensored: bool) -> Option<usize> {
+/// Priority index of the first enabled Hugging Face source that uploaded this entry.
+/// A source that is on shows all its models (official, quants, finetunes, uncensored).
+pub fn source_index(e: &ModelEntry, sources: &[Source]) -> Option<usize> {
     sources.iter().filter(|s| s.on && s.comps.is_some()).position(|s| {
-        let matches = if s.id == "labs" {
-            is_manufacturer(e)
-        } else {
-            s.name.eq_ignore_ascii_case(e.author())
-        };
-        let c = s.comps.unwrap();
-        matches && if uncensored { c.unc } else if original { c.official } else { c.finetune }
+        if s.id == "labs" { is_manufacturer(e) } else { s.name.eq_ignore_ascii_case(e.author()) }
     })
 }
 
@@ -429,7 +425,7 @@ pub fn rank(entries: &[ModelEntry], sources: &[Source], opts: RankOptions, now_u
         if opts.official_only && !original || uncensored && !opts.show_uncensored {
             continue;
         }
-        let Some(si) = source_index(e, sources, original, uncensored) else { continue };
+        let Some(si) = source_index(e, sources) else { continue };
         kept += 1;
         let r = Ranked {
             id: e.id.clone(),
