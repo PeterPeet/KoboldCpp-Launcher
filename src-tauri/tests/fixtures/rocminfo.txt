@@ -1,0 +1,31 @@
+*******
+Agent 1
+*******
+  Name:                    AMD Ryzen 9 7950X 16-Core Processor
+  Uuid:                    CPU-XX
+  Marketing Name:          AMD Ryzen 9 7950X 16-Core Processor
+  Vendor Name:             CPU
+  Device Type:             CPU
+  Pool Info:
+    Pool 1
+      Segment:                 GLOBAL; FLAGS: FINE GRAINED
+      Size:                    65536000(0x3e80000) KB
+*******
+Agent 2
+*******
+  Name:                    gfx1100
+  Uuid:                    GPU-1234567890abcdef
+  Marketing Name:          AMD Radeon RX 7900 XTX
+  Vendor Name:             AMD
+  Feature:                 KERNEL_DISPATCH
+  Device Type:             GPU
+  Cache Info:
+    L1:                      32(0x20) KB
+  Pool Info:
+    Pool 1
+      Segment:                 GLOBAL; FLAGS: COARSE GRAINED
+      Size:                    25149440(0x17fc000) KB
+      Allocatable:             TRUE
+    Pool 2
+      Segment:                 GLOBAL; FLAGS: EXTENDED FINE GRAINED
+      Size:                    25149440(0x17fc000) KB

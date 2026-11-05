@@ -25,6 +25,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
+sysinfo = "0.40.1"
 
 
 [dev-dependencies]

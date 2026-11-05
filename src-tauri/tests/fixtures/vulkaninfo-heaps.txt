@@ -1,0 +1,39 @@
+GPU0:
+VkPhysicalDeviceMemoryProperties:
+=================================
+memoryHeaps: count = 3
+	memoryHeaps[0]:
+		size   = 12884901888 (0x300000000) (12.00 GiB)
+		budget = 12245271347 (0x2d9d00000) (11.40 GiB)
+		usage  = 0 (0x00000000) (0.00 B)
+		flags: count = 1
+			MEMORY_HEAP_DEVICE_LOCAL_BIT
+	memoryHeaps[1]:
+		size   = 34229248000 (0x7f8400000) (31.88 GiB)
+		budget = 34229248000 (0x7f8400000) (31.88 GiB)
+		usage  = 0 (0x00000000) (0.00 B)
+		flags:
+			None
+	memoryHeaps[2]:
+		size   = 224395264 (0x0d600000) (214.00 MiB)
+		budget = 182452224 (0x0ae00000) (174.00 MiB)
+		usage  = 41943040 (0x02800000) (40.00 MiB)
+		flags: count = 1
+			MEMORY_HEAP_DEVICE_LOCAL_BIT
+memoryTypes: count = 5
+	memoryTypes[0]:
+		heapIndex     = 1
+
+GPU1:
+VkPhysicalDeviceMemoryProperties:
+=================================
+memoryHeaps: count = 1
+	memoryHeaps[0]:
+		size   = 17114624000 (0x3fc200000) (15.94 GiB)
+		budget = 17114624000 (0x3fc200000) (15.94 GiB)
+		usage  = 0 (0x00000000) (0.00 B)
+		flags:
+			None
+memoryTypes: count = 2
+	memoryTypes[0]:
+		heapIndex     = 0
