@@ -144,6 +144,10 @@ First full version built in six phases (commits on `main`). Decisions made on th
   when the maker has no fitting GGUF of its own (DeepSeek, Meta and OpenAI publish none).
 - **Quant pick:** other 4-bit quants (e.g. Google's QAT Q4_0) are a normal choice; "Smaller quant"
   only for 3-bit and below.
+- **Library folders** are added with a choice "Add recursively from the folder" (default on: all
+  subfolders, links followed, loops guarded); off = only files directly in the folder. Our own
+  downloads folder is always recursive (`<uploader>/<repo>/`). LM Studio keeps models in
+  `~/.lmstudio/models/<uploader>/<repo>/` (its `hub/models` folder holds only catalog files).
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.

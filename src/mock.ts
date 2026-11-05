@@ -99,6 +99,6 @@ export function mockLibrary(): LibraryView {
   return {
     models,
     drives: Object.entries(DRIVES).map(([k, d]) => ({ mount: `/${k}`, name: d.label, total: d.total * GB, free: d.free * GB, removable: k === "E" })),
-    folders: ["/C/models", "/E/models"], modelsDir: "/C/models",
+    folders: [{ path: "/C/models", recursive: true }, { path: "/E/models", recursive: false }], modelsDir: "/C/models",
   };
 }

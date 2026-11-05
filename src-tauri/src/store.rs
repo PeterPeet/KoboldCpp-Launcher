@@ -41,6 +41,31 @@ pub struct InstalledBinary {
     pub asset: Option<String>,
 }
 
+/// A folder in the library. `recursive`: also search all subfolders.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(from = "FolderRepr")]
+pub struct LibraryFolder {
+    pub path: PathBuf,
+    pub recursive: bool,
+}
+
+/// Older settings stored plain paths; those count as recursive.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FolderRepr {
+    Path(PathBuf),
+    Full { path: PathBuf, recursive: bool },
+}
+
+impl From<FolderRepr> for LibraryFolder {
+    fn from(r: FolderRepr) -> Self {
+        match r {
+            FolderRepr::Path(path) => Self { path, recursive: true },
+            FolderRepr::Full { path, recursive } => Self { path, recursive },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -50,7 +75,7 @@ pub struct Settings {
     /// Where downloads go; `None` = app data `models/`.
     pub models_dir: Option<PathBuf>,
     /// Extra folders the library scans for .gguf files.
-    pub library_folders: Vec<PathBuf>,
+    pub library_folders: Vec<LibraryFolder>,
     /// Hugging Face sources, highest priority first.
     pub sources: Vec<crate::hf::Source>,
     /// Model path → last start (unix seconds).
@@ -113,5 +138,11 @@ mod tests {
         s.save(&dirs.settings_file()).unwrap();
         assert_eq!(Settings::load(&dirs.settings_file()), s);
         assert_eq!(s.models_dir(&dirs), dir.path().join("models"));
+    }
+
+    #[test]
+    fn old_plain_folder_paths_load_as_recursive() {
+        let s: Settings = serde_json::from_str(r#"{"libraryFolders":["/a",{"path":"/b","recursive":false}]}"#).unwrap();
+        assert_eq!(s.library_folders, [LibraryFolder { path: "/a".into(), recursive: true }, LibraryFolder { path: "/b".into(), recursive: false }]);
     }
 }

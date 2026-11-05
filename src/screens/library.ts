@@ -60,16 +60,41 @@ async function pickFolder(): Promise<string | null> {
   return typeof p === "string" ? p : null;
 }
 
-async function addFolder() {
-  const p = await pickFolder();
-  if (!p) return;
-  try {
-    S.settings = await api.addFolder(p);
-    toast("Folder added");
-    reloadLibrary();
-  } catch (e) {
-    toast(String(e));
-  }
+/** Add-folder dialog: pick a folder, choose whether subfolders are searched too. */
+function addFolder() {
+  const root = $("#dialogRoot")!;
+  let path = "";
+  let recursive = true;
+  const close = () => root.replaceChildren();
+  const draw = () => {
+    const pathBox = h("div", { class: "pathbox mono", title: path }, path || "No folder chosen");
+    const dlg = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "addTitle", style: "width:min(520px,100%)" },
+      h("div", {},
+        h("h2", { id: "addTitle" }, "Add folder"),
+        h("p", {}, "The library shows every .gguf model in this folder. Models stay where they are.")),
+      h("div", { style: "display:flex;gap:8px;align-items:center" },
+        pathBox,
+        h("button", { onclick: async () => { const p = await pickFolder(); if (p) { path = p; draw(); } } }, path ? "Change…" : "Choose folder…")),
+      h("label", { class: "chk", for: "addRecursive", style: "font-size:14px" },
+        checkbox("addRecursive", recursive, (v) => { recursive = v; }),
+        "Add recursively from the folder"),
+      h("p", { class: "note", style: "margin:-6px 0 0 23px" }, "Also search all subfolders, e.g. LM Studio's models folder, which keeps each model in its own folder."),
+      h("div", { class: "btns" },
+        h("button", { onclick: close }, "Cancel"),
+        h("button", { class: "primary", disabled: !path, onclick: async () => {
+          try {
+            S.settings = await api.addFolder(path, recursive);
+            close();
+            toast("Folder added");
+            reloadLibrary();
+          } catch (e) {
+            toast(String(e));
+          }
+        } }, "Add folder")));
+    const scrim = h("div", { class: "scrim", onclick: (e: Event) => { if (e.target === scrim) close(); } }, dlg);
+    root.replaceChildren(scrim);
+  };
+  draw();
 }
 
 function startModel(m: LocalModel) {
@@ -89,7 +114,7 @@ async function moveModel(m: LocalModel) {
   try {
     await api.moveModel(m.path, dest);
     toast(`${m.name} moved`);
-    if (S.settings && !S.settings.libraryFolders.includes(dest) && !dest.startsWith(view?.modelsDir ?? "\0")) S.settings = await api.addFolder(dest);
+    if (S.settings && !S.settings.libraryFolders.some((f) => dest.startsWith(f.path)) && !dest.startsWith(view?.modelsDir ?? "\0")) S.settings = await api.addFolder(dest, false);
     reloadLibrary();
   } catch (e) {
     toast(String(e));
@@ -140,10 +165,13 @@ export function renderLibrary() {
 
     const fbox = h("div", { style: "display:grid;grid-template-columns:minmax(0,1fr);gap:4px" }, h("h3", { style: "margin-bottom:4px" }, "Folders"));
     for (const f of view.folders) {
-      const own = f === view.modelsDir;
-      fbox.append(h("div", { class: "folder", title: f },
-        h("span", { class: "mono" }, f.split(/[\\/]/).slice(-2).join("/")),
-        own ? h("span", { class: "n" }, "downloads") : h("button", { class: "linkbtn", onclick: async () => { S.settings = await api.removeFolder(f); reloadLibrary(); } }, "Remove")));
+      const own = f.path === view.modelsDir;
+      fbox.append(h("div", { class: "folder", title: `${f.path}${f.recursive ? " (with subfolders)" : " (this folder only)"}` },
+        h("span", { class: "mono" }, f.path.split(/[\\/]/).slice(-2).join("/")),
+        own ? h("span", { class: "n" }, "downloads")
+          : h("span", { style: "display:inline-flex;gap:6px;align-items:center;flex-shrink:0" },
+              f.recursive ? h("span", { class: "n", title: "Subfolders are searched too" }, "+ sub") : null,
+              h("button", { class: "linkbtn", onclick: async () => { S.settings = await api.removeFolder(f.path); reloadLibrary(); } }, "Remove"))));
     }
     side.append(fbox);
   }

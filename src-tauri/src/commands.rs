@@ -669,10 +669,14 @@ pub fn import_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Ve
 
 /* ---------- library ---------- */
 
-fn library_roots(state: &AppState) -> Vec<PathBuf> {
+/// Folders the library scans: our downloads folder (always recursive, `<uploader>/<repo>/`)
+/// and the user's folders with their own setting.
+fn library_roots(state: &AppState) -> Vec<(PathBuf, bool)> {
     let s = state.settings();
-    let mut roots = vec![s.models_dir(&state.dirs)];
-    roots.extend(s.library_folders.iter().cloned());
+    let mut roots = vec![(s.models_dir(&state.dirs), true)];
+    roots.extend(s.library_folders.iter().map(|f| (f.path.clone(), f.recursive)));
+    let mut seen = std::collections::HashSet::new();
+    roots.retain(|r| seen.insert(r.0.clone()));
     roots
 }
 
@@ -681,7 +685,7 @@ fn library_roots(state: &AppState) -> Vec<PathBuf> {
 pub struct LibraryView {
     pub models: Vec<crate::library::LocalModel>,
     pub drives: Vec<crate::library::Drive>,
-    pub folders: Vec<PathBuf>,
+    pub folders: Vec<crate::store::LibraryFolder>,
     pub models_dir: PathBuf,
 }
 
@@ -690,31 +694,32 @@ pub async fn library_scan(state: State<'_, AppState>) -> CmdResult<LibraryView> 
     let roots = library_roots(&state);
     let used = state.settings().last_used;
     let models_dir = state.settings().models_dir(&state.dirs);
-    let folders = roots.clone();
+    let folders = roots.iter().map(|(path, recursive)| crate::store::LibraryFolder { path: path.clone(), recursive: *recursive }).collect();
     let (models, drives) = tauri::async_runtime::spawn_blocking(move || crate::library::scan(&roots, &used)).await.map_err(err)?;
     Ok(LibraryView { models, drives, folders, models_dir })
 }
 
 #[tauri::command]
-pub fn add_library_folder(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
+pub fn add_library_folder(state: State<'_, AppState>, path: PathBuf, recursive: Option<bool>) -> CmdResult<Settings> {
     if !path.is_dir() {
         return Err("That folder does not exist".into());
     }
-    state.update_settings(|s| {
-        if !s.library_folders.contains(&path) {
-            s.library_folders.push(path);
-        }
+    let recursive = recursive.unwrap_or(true);
+    crate::applog!("library folder added: {} (recursive: {recursive})", path.display());
+    state.update_settings(|s| match s.library_folders.iter_mut().find(|f| f.path == path) {
+        Some(f) => f.recursive = recursive,
+        None => s.library_folders.push(crate::store::LibraryFolder { path, recursive }),
     })
 }
 
 #[tauri::command]
 pub fn remove_library_folder(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
-    state.update_settings(|s| s.library_folders.retain(|p| p != &path))
+    state.update_settings(|s| s.library_folders.retain(|f| f.path != path))
 }
 
 #[tauri::command]
 pub async fn move_model(state: State<'_, AppState>, path: PathBuf, dest: PathBuf) -> CmdResult<PathBuf> {
-    if !crate::library::is_managed(&path, &library_roots(&state)) {
+    if !crate::library::is_managed(&path, &library_roots(&state).into_iter().map(|r| r.0).collect::<Vec<_>>()) {
         return Err("Only models in your library folders can be moved".into());
     }
     tauri::async_runtime::spawn_blocking(move || crate::library::move_model(&path, &dest)).await.map_err(err)?.map_err(err)
@@ -723,7 +728,7 @@ pub async fn move_model(state: State<'_, AppState>, path: PathBuf, dest: PathBuf
 /// Move a model (all parts) to the Trash.
 #[tauri::command]
 pub fn trash_model(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
-    if !crate::library::is_managed(&path, &library_roots(&state)) {
+    if !crate::library::is_managed(&path, &library_roots(&state).into_iter().map(|r| r.0).collect::<Vec<_>>()) {
         return Err("Only models in your library folders can be removed".into());
     }
     crate::library::trash_model(&path).map_err(err)

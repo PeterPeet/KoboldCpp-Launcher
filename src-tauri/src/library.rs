@@ -90,25 +90,45 @@ pub fn drives() -> Vec<Drive> {
     out
 }
 
-fn walk(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+/// Collect `.gguf` files. `depth`: how many subfolder levels to enter (0 = this folder only).
+/// `seen` stops loops through symbolic links.
+fn walk(dir: &Path, depth: u32, seen: &mut std::collections::HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+    if let Ok(real) = dir.canonicalize()
+        && !seen.insert(real)
+    {
+        return;
+    }
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let p = e.path();
-        let Ok(ft) = e.file_type() else { continue };
+        let Ok(mut ft) = e.file_type() else { continue };
+        // Follow symbolic links (LM Studio and others link files instead of copying them).
+        if ft.is_symlink() {
+            match std::fs::metadata(&p) {
+                Ok(m) => ft = m.file_type(),
+                Err(_) => continue,
+            }
+        }
         if ft.is_dir() && depth > 0 && !e.file_name().to_string_lossy().starts_with('.') {
-            walk(&p, depth - 1, out);
+            walk(&p, depth - 1, seen, out);
         } else if ft.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("gguf")) {
             out.push(p);
         }
     }
 }
 
-/// Scan folders (4 levels deep) for GGUF models. Split models show once (their first part).
-pub fn scan(folders: &[PathBuf], last_used: &HashMap<String, u64>) -> (Vec<LocalModel>, Vec<Drive>) {
+/// Deepest subfolder level a recursive folder is searched to.
+pub const MAX_DEPTH: u32 = 32;
+
+/// Scan folders for GGUF models: `(folder, recursive)`; recursive folders include all
+/// subfolders, the others only their own files. Split models show once (their first part).
+pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>) -> (Vec<LocalModel>, Vec<Drive>) {
     let mut files = Vec::new();
-    for f in folders {
-        walk(f, 4, &mut files);
+    for (f, recursive) in roots {
+        // Each root gets its own loop guard, so a non-recursive root inside a recursive one still works.
+        walk(f, if *recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut files);
     }
+    let folders: Vec<PathBuf> = roots.iter().map(|r| r.0.clone()).collect();
     files.sort();
     files.dedup();
     let all_drives = drives();
@@ -217,6 +237,36 @@ pub fn trash_model(path: &Path) -> Result<(), trash::Error> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn follows_symlinks() {
+        let d = tempfile::tempdir().unwrap();
+        let real = d.path().join("store");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("m-Q4_K_M.gguf"), gguf::tests::llama_like()).unwrap();
+        let lib = d.path().join("lib/owner/repo");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::os::unix::fs::symlink(real.join("m-Q4_K_M.gguf"), lib.join("m-Q4_K_M.gguf")).unwrap();
+        let (models, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new());
+        assert_eq!(models.len(), 1);
+        // Not recursive: only files directly in the folder.
+        let (none, _) = scan(&[(d.path().join("lib"), false)], &HashMap::new());
+        assert!(none.is_empty());
+        // A link back up the tree must not loop.
+        std::os::unix::fs::symlink(d.path().join("lib"), lib.join("loop")).unwrap();
+        let (again, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new());
+        assert_eq!(again.len(), 1);
+    }
+
+    #[test]
+    fn deep_folders_when_recursive() {
+        let d = tempfile::tempdir().unwrap();
+        let deep = d.path().join("a/b/c/d/e/f/g");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("x-Q4_K_M.gguf"), gguf::tests::llama_like()).unwrap();
+        assert_eq!(scan(&[(d.path().to_path_buf(), true)], &HashMap::new()).0.len(), 1);
+    }
+
     #[test]
     fn classifies_by_name_and_arch() {
         assert_eq!(classify("mmproj-F16.gguf", Some("clip")), ModelType::Projector);
@@ -238,7 +288,7 @@ mod tests {
         std::fs::write(root.path().join("big-00001-of-00002.gguf"), &head).unwrap();
         std::fs::write(root.path().join("big-00002-of-00002.gguf"), vec![0u8; 500]).unwrap();
         std::fs::write(root.path().join("notes.txt"), b"x").unwrap();
-        let (models, _) = scan(&[root.path().to_path_buf()], &HashMap::new());
+        let (models, _) = scan(&[(root.path().to_path_buf(), true)], &HashMap::new());
         assert_eq!(models.len(), 3, "{:?}", models.iter().map(|m| &m.file).collect::<Vec<_>>());
         let vl = models.iter().find(|m| m.file.starts_with("Qwen3-VL")).unwrap();
         assert_eq!(vl.kind, ModelType::Vision);
@@ -263,7 +313,7 @@ mod real_folder {
     #[ignore]
     fn scan_real_folder() {
         let p = std::path::PathBuf::from(std::env::var("KL_MODELS").expect("set KL_MODELS"));
-        let (models, drives) = super::scan(&[p], &Default::default());
+        let (models, drives) = super::scan(&[(p, true)], &Default::default());
         for m in &models {
             println!("{:?} {} {:?} {} layers={:?} mmproj={:?}", m.kind, m.file, m.quant, m.size, m.layers, m.mmproj);
         }

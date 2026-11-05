@@ -10,7 +10,8 @@ unchanged.
 - **Start screen:** detects your GPUs, CPU and memory, shows KoboldCpp's own ready-made templates for
   your PC, and a ranked list of popular models from your Hugging Face sources. One click downloads
   what is needed and starts KoboldCpp. The best quantization that fits is picked for you.
-- **Model library:** every `.gguf` in your folders as a card (type, size, context, layers, drive,
+- **Model library:** every `.gguf` in your folders (optionally with all subfolders, e.g. LM Studio's
+  `~/.lmstudio/models`) as a card (type, size, context, layers, drive,
   last used), with filters, move to another folder or drive, and remove to the Trash. A second tab
   searches all GGUF models on Hugging Face.
 - **Advanced setup:** backend and GPUs, layers, split across several GPUs with memory bars, context,

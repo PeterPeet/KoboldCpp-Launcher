@@ -26,7 +26,7 @@ export interface UpdateInfo { current: string | null; latest: ReleaseInfo | null
 export interface Progress { done: number; total: number | null; speed: number }
 export interface Settings {
   binary: InstalledBinary | null; checkUpdatesOnStart: boolean; includePrereleases: boolean;
-  modelsDir: string | null; libraryFolders: string[]; sources: Source[];
+  modelsDir: string | null; libraryFolders: LibraryFolder[]; sources: Source[];
 }
 export interface Paths { data: string; models: string; presets: string; logs: string }
 export interface Logs { dir: string; koboldcpp: string; launcher: string }
@@ -70,7 +70,8 @@ export interface LocalModel {
   mmproj: string | null; drive: string | null; modified: number | null; lastUsed: number | null;
 }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
-export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: string[]; modelsDir: string }
+export interface LibraryFolder { path: string; recursive: boolean }
+export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: LibraryFolder[]; modelsDir: string }
 export interface PresetInfo { name: string; path: string; modified: number | null }
 
 /* ---------- plumbing ---------- */
@@ -185,7 +186,7 @@ export const api = {
   exportSources: (path: string) => call<void>("export_sources", { path }),
 
   library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
-  addFolder: (path: string) => call<Settings>("add_library_folder", { path }),
+  addFolder: (path: string, recursive = true) => call<Settings>("add_library_folder", { path, recursive }, () => (mockSettings = { ...mockSettings, libraryFolders: [...mockSettings.libraryFolders, { path, recursive }] })),
   removeFolder: (path: string) => call<Settings>("remove_library_folder", { path }),
   moveModel: (path: string, dest: string) => call<string>("move_model", { path, dest }),
   trashModel: (path: string) => call<void>("trash_model", { path }, () => import("./mock").then((m) => m.mockTrash(path))),
