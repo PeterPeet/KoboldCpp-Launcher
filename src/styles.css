@@ -150,6 +150,9 @@ pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(-
 .card .acts{margin-top:auto}
 .card.cant-run{background:color-mix(in srgb,var(--bad-soft) 35%,var(--win))}
 .card.cant-run h4{color:var(--fg-2)}
+.opts{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2)}
+.opt{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.opt input{accent-color:var(--accent);margin:0}
 .runline{font-size:12px;line-height:1.4;padding:6px 8px;border-radius:8px}
 .runline.ok{background:var(--ok-soft);color:var(--ok)}
 .runline.warn{background:var(--warn-soft);color:var(--warn)}

@@ -41,6 +41,9 @@ pub struct GgufInfo {
     pub key_length: Option<u32>,
     pub value_length: Option<u32>,
     pub expert_count: Option<u32>,
+    /// Multi-token-prediction layers in the file (`<arch>.nextn_predict_layers`); KoboldCpp can
+    /// use them for faster answers with `--usemtp`.
+    pub mtp_layers: Option<u32>,
     pub tensor_count: u64,
     /// Sum of all parts for split files (`-00001-of-00003.gguf`).
     pub total_size: u64,
@@ -204,7 +207,7 @@ pub fn read_header<T: Read>(input: T) -> Result<GgufInfo, GgufError> {
         let ty = r.u32()?;
         let wanted = key.starts_with("general.") || key.ends_with(".block_count") || key.ends_with(".context_length")
             || key.ends_with(".embedding_length") || key.ends_with(".attention.head_count_kv")
-            || key.ends_with(".attention.key_length") || key.ends_with(".attention.value_length") || key.ends_with(".expert_count");
+            || key.ends_with(".attention.key_length") || key.ends_with(".attention.value_length") || key.ends_with(".expert_count") || key.ends_with(".nextn_predict_layers");
         let val = r.value(ty, wanted)?;
         if !wanted {
             continue;
@@ -226,6 +229,7 @@ pub fn read_header<T: Read>(input: T) -> Result<GgufInfo, GgufError> {
         info.key_length = get("attention.key_length").and_then(Val::as_u32);
         info.value_length = get("attention.value_length").and_then(Val::as_u32);
         info.expert_count = get("expert_count").and_then(Val::as_u32);
+        info.mtp_layers = get("nextn_predict_layers").and_then(Val::as_u32);
     }
     Ok(info)
 }
@@ -312,6 +316,7 @@ pub mod tests {
             .u32("llama.embedding_length", 4096)
             .u32("llama.attention.head_count_kv", 8)
             .u32("llama.attention.key_length", 128)
+            .u32("llama.nextn_predict_layers", 1)
             .build()
     }
 
@@ -324,6 +329,7 @@ pub mod tests {
         assert_eq!(info.context_length, Some(131072));
         assert_eq!(info.head_count_kv, Some(8));
         assert_eq!(info.key_length, Some(128));
+        assert_eq!(info.mtp_layers, Some(1));
         assert_eq!(info.tensor_count, 291);
     }
 

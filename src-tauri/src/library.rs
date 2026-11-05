@@ -16,6 +16,17 @@ pub enum ModelType {
     Projector,
 }
 
+/// File format of a model on disk. KoboldCpp loads GGUF only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    Gguf,
+    /// Apple MLX (safetensors + config with MLX quantization); runs in LM Studio / mlx-lm.
+    Mlx,
+    /// Plain safetensors weights (Transformers); need converting to GGUF for KoboldCpp.
+    Safetensors,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModel {
@@ -45,6 +56,9 @@ pub struct LocalModel {
     /// Can the installed KoboldCpp load this architecture? Only for text, vision and embedding
     /// models (image and voice models use other engines inside KoboldCpp).
     pub support: Option<crate::config::archs::Support>,
+    pub format: Format,
+    /// The file has MTP layers (KoboldCpp `--usemtp`).
+    pub mtp: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,10 +113,27 @@ pub fn drives() -> Vec<Drive> {
 
 /// Collect `.gguf` files. `depth`: how many subfolder levels to enter (0 = this folder only).
 /// `seen` stops loops through symbolic links.
-fn walk(dir: &Path, depth: u32, seen: &mut std::collections::HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+/// Collected while walking: GGUF files and folders holding a safetensors model (MLX or plain).
+#[derive(Default)]
+struct Found {
+    gguf: Vec<PathBuf>,
+    weight_dirs: Vec<PathBuf>,
+}
+
+/// A folder with `config.json` and `*.safetensors` is one model (MLX or Transformers).
+fn is_weight_dir(dir: &Path) -> bool {
+    dir.join("config.json").is_file()
+        && std::fs::read_dir(dir).is_ok_and(|rd| rd.flatten().any(|e| e.path().extension().is_some_and(|x| x == "safetensors")))
+}
+
+fn walk(dir: &Path, depth: u32, seen: &mut std::collections::HashSet<PathBuf>, found: &mut Found) {
     if let Ok(real) = dir.canonicalize()
         && !seen.insert(real)
     {
+        return;
+    }
+    if is_weight_dir(dir) {
+        found.weight_dirs.push(dir.to_path_buf());
         return;
     }
     let Ok(rd) = std::fs::read_dir(dir) else { return };
@@ -117,9 +148,9 @@ fn walk(dir: &Path, depth: u32, seen: &mut std::collections::HashSet<PathBuf>, o
             }
         }
         if ft.is_dir() && depth > 0 && !e.file_name().to_string_lossy().starts_with('.') {
-            walk(&p, depth - 1, seen, out);
+            walk(&p, depth - 1, seen, found);
         } else if ft.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("gguf")) {
-            out.push(p);
+            found.gguf.push(p);
         }
     }
 }
@@ -134,8 +165,9 @@ pub struct FolderPreview {
 }
 
 pub fn preview(dir: &Path, recursive: bool) -> FolderPreview {
-    let mut files = Vec::new();
-    walk(dir, if recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut files);
+    let mut found = Found::default();
+    walk(dir, if recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut found);
+    let files = found.gguf;
     let models: Vec<&PathBuf> = files
         .iter()
         .filter(|p| {
@@ -154,11 +186,14 @@ pub const MAX_DEPTH: u32 = 32;
 /// subfolders, the others only their own files. Split models show once (their first part).
 /// `installed`: version of the installed KoboldCpp (for the architecture check).
 pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, installed: Option<&str>) -> (Vec<LocalModel>, Vec<Drive>) {
-    let mut files = Vec::new();
+    let mut found = Found::default();
     for (f, recursive) in roots {
         // Each root gets its own loop guard, so a non-recursive root inside a recursive one still works.
-        walk(f, if *recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut files);
+        walk(f, if *recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut found);
     }
+    let Found { gguf: mut files, mut weight_dirs } = found;
+    weight_dirs.sort();
+    weight_dirs.dedup();
     let folders: Vec<PathBuf> = roots.iter().map(|r| r.0.clone()).collect();
     files.sort();
     files.dedup();
@@ -194,6 +229,8 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
                 missing_parts: gguf::split_paths(p).iter().filter(|x| !x.exists()).count() as u32,
                 readable: info.is_some(),
                 support: None,
+                format: Format::Gguf,
+                mtp: info.as_ref().and_then(|i| i.mtp_layers).is_some_and(|n| n > 0),
                 path: p.clone(),
                 file,
             }
@@ -214,7 +251,8 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
             m.kind = ModelType::Vision;
         }
     }
-    for m in &mut models {
+    models.extend(weight_dirs.iter().map(|d| weights_model(d, &all_drives, last_used)));
+    for m in models.iter_mut().filter(|m| m.format == Format::Gguf) {
         if matches!(m.kind, ModelType::Text | ModelType::Vision | ModelType::Embedding) {
             m.support = m.architecture.as_deref().map(|a| crate::config::archs::support(a, installed));
         }
@@ -222,6 +260,44 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
     let used: std::collections::HashSet<String> = models.iter().filter_map(|m| m.drive.clone()).collect();
     let shown = all_drives.into_iter().filter(|d| used.contains(&d.mount)).collect();
     (models, shown)
+}
+
+/// A safetensors model folder (MLX or Transformers) as a library entry: listed so the user sees
+/// it, but KoboldCpp can't load it.
+fn weights_model(dir: &Path, drives: &[Drive], last_used: &HashMap<String, u64>) -> LocalModel {
+    let cfg: serde_json::Value = std::fs::read_to_string(dir.join("config.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // MLX writes its quantization (group_size/bits) into config.json; LM Studio also names the folder.
+    let mlx = name.to_ascii_lowercase().contains("mlx") || cfg.get("quantization").is_some_and(|q| q.get("group_size").is_some());
+    let size = std::fs::read_dir(dir).map(|rd| rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == "safetensors")).filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum()).unwrap_or(0);
+    let arch = cfg.get("model_type").and_then(|v| v.as_str()).map(str::to_string);
+    let bits = cfg.get("quantization").and_then(|q| q.get("bits")).and_then(|b| b.as_u64());
+    let ctx = cfg.get("max_position_embeddings").or_else(|| cfg.pointer("/text_config/max_position_embeddings")).and_then(|v| v.as_u64());
+    let layers = cfg.get("num_hidden_layers").or_else(|| cfg.pointer("/text_config/num_hidden_layers")).and_then(|v| v.as_u64()).map(|v| v as u32);
+    LocalModel {
+        path: dir.to_path_buf(),
+        file: name.clone(),
+        name,
+        kind: if cfg.get("vision_config").is_some() { ModelType::Vision } else { ModelType::Text },
+        architecture: arch,
+        quant: bits.map(|b| format!("{b}-bit")),
+        size_label: None,
+        size,
+        parts: 1,
+        layers,
+        context_length: ctx,
+        head_count_kv: None,
+        kv_len: None,
+        mmproj: None,
+        drive: drive_of(dir, drives).map(|d| d.mount.clone()),
+        modified: std::fs::metadata(dir).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
+        last_used: last_used.get(&dir.to_string_lossy().to_string()).copied(),
+        missing_parts: 0,
+        readable: true,
+        support: None,
+        format: if mlx { Format::Mlx } else { Format::Safetensors },
+        mtp: false,
+    }
 }
 
 /// Every file belonging to a model (all split parts).
@@ -325,6 +401,24 @@ mod tests {
     }
 
     #[test]
+    fn mlx_folders_are_listed_as_mlx() {
+        let d = tempfile::tempdir().unwrap();
+        let mlx = d.path().join("lmstudio-community/gemma-4-E2B-it-MLX-4bit");
+        std::fs::create_dir_all(&mlx).unwrap();
+        std::fs::write(mlx.join("config.json"), r#"{"model_type":"gemma4","vision_config":{},"quantization":{"group_size":64,"bits":4},"text_config":{"num_hidden_layers":35}}"#).unwrap();
+        std::fs::write(mlx.join("model.safetensors"), vec![0u8; 1000]).unwrap();
+        let hf = d.path().join("plain-weights");
+        std::fs::create_dir_all(&hf).unwrap();
+        std::fs::write(hf.join("config.json"), r#"{"model_type":"llama"}"#).unwrap();
+        std::fs::write(hf.join("model-00001-of-00002.safetensors"), b"x").unwrap();
+        let (models, _) = scan(&[(d.path().to_path_buf(), true)], &HashMap::new(), None);
+        let m = models.iter().find(|m| m.name.contains("MLX")).unwrap();
+        assert_eq!((m.format, m.kind, m.size, m.quant.as_deref(), m.layers), (Format::Mlx, ModelType::Vision, 1000, Some("4-bit"), Some(35)));
+        assert_eq!(models.iter().find(|m| m.name == "plain-weights").unwrap().format, Format::Safetensors);
+        assert_eq!(preview(d.path(), true).models, 0, "the add-folder count is about models KoboldCpp can load");
+    }
+
+    #[test]
     fn deep_folders_when_recursive() {
         let d = tempfile::tempdir().unwrap();
         let deep = d.path().join("a/b/c/d/e/f/g");
@@ -382,7 +476,7 @@ mod real_folder {
         let p = std::path::PathBuf::from(std::env::var("KL_MODELS").expect("set KL_MODELS"));
         let (models, drives) = super::scan(&[(p, true)], &Default::default(), Some("v1.124.2"));
         for m in &models {
-            println!("{:?} {} arch={:?} support={:?} missing={} readable={}", m.kind, m.file, m.architecture, m.support, m.missing_parts, m.readable);
+            println!("{:?} {:?} {} arch={:?} support={:?} mtp={} quant={:?} size={}", m.format, m.kind, m.file, m.architecture, m.support, m.mtp, m.quant, m.size);
         }
         println!("drives: {drives:?}");
         assert!(!models.is_empty());

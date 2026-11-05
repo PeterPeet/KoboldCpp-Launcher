@@ -6,6 +6,7 @@ import { openSources } from "../dialogs/sources";
 import { getAndStart, goControl } from "../downloads";
 import { S, machine, render, vram } from "../state";
 import { serverBanner } from "./banner";
+import { getOpts, setOpts } from "../modelopts";
 
 const GB = 1024 ** 3;
 const TIER_LABEL = { low: "Low spec", mid: "Mid spec", high: "High spec" } as const;
@@ -100,10 +101,11 @@ function startTemplate(t: Template) {
 }
 
 function startPopular(m: PopularItem) {
+  const vision = !!m.mmproj && getOpts(m.id).vision;
   const files = [{ url: m.urls[0], size: m.pick.size }];
-  if (m.mmproj) files.push({ url: m.mmproj[0], size: m.mmproj[1] });
+  if (vision) files.push({ url: m.mmproj![0], size: m.mmproj![1] });
   const cfg: Record<string, unknown> = { model_param: m.urls[0], contextsize: 16384 };
-  if (m.mmproj) cfg.mmproj = m.mmproj[0];
+  if (vision) cfg.mmproj = m.mmproj![0];
   getAndStart("m:" + m.id, m.name, files, backendFor(cfg));
 }
 
@@ -189,7 +191,10 @@ function popularSection() {
           kindPill(m),
           m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
           ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
-          m.mmproj ? h("span", { class: "pill p-mute" }, "Sees images") : null),
+          m.mmproj
+            ? h("label", { class: "pill p-mute opt", for: `vis-${m.id}`, title: "Also download and load the vision file so the model can see images" },
+                checkbox(`vis-${m.id}`, getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })), "Vision")
+            : null),
         h("div", { class: "sub" }, [m.params, m.pick.quant, fmtBytes(m.pick.size), `about ${estSpeed(m.pick.size, m.pick.fit)} tokens/s`].filter(Boolean).join(" · ")),
         h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
         S.dl[key] ? ctl : null),

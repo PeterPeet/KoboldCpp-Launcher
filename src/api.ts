@@ -69,6 +69,10 @@ export interface LocalModel {
   size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
   mmproj: string | null; drive: string | null; modified: number | null; lastUsed: number | null;
   missingParts: number; readable: boolean; support: "yes" | "no" | "unknown" | null;
+  /** "gguf" runs in KoboldCpp; "mlx" / "safetensors" folders are listed but can't be loaded. */
+  format: "gguf" | "mlx" | "safetensors";
+  /** The file has MTP layers (faster answers with --usemtp). */
+  mtp: boolean;
 }
 export interface LocalFit { fit: Fit; gpuLayers: number }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }

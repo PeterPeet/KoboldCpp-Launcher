@@ -259,6 +259,8 @@ function modelPage(pane: HTMLElement) {
       row("Vision file", modelSelect("mmproj", "mmproj", ["Projector"], { none: "None" }), "Lets the model see images (mmproj)"),
       row("Draft model", modelSelect("draft", "draftmodel", ["Text"], { none: "None" }), "A small model of the same family speeds up answers"),
       row("Search and memory", modelSelect("embd", "embeddingsmodel", ["Embedding"], { none: "None" }), "Embeddings model for documents and memory"),
+      row("Use MTP layers", toggle("usemtp", get("usemtp") === true, (v) => set({ usemtp: v })),
+        textModel()?.mtp ? "This model has MTP layers: faster answers, needs a bit more memory" : "Only for models with MTP layers (e.g. some Qwen 3.5+ quants)"),
       row("Use the model's chat template", toggle("jinja", get("jinja") === true, (v) => set({ jinja: v })), "Jinja; needed for tool use with some models")));
 }
 

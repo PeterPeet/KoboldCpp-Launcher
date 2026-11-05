@@ -6,6 +6,7 @@ import { getAndStart, goControl } from "../downloads";
 import { launch, stop } from "../server";
 import { S, machine, render } from "../state";
 import { famClass, kindPill } from "./start";
+import { getOpts, setOpts } from "../modelopts";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
 const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
@@ -43,7 +44,7 @@ async function loadFits() {
   const ms = view.models;
   const sizeOf = (p: string | null) => (p ? view!.models.find((x) => x.path === p)?.size ?? 0.9 * 1024 ** 3 : null);
   // KoboldCpp's own layer estimate with the GGUF layout, at the context the launcher starts with.
-  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: sizeOf(m.mmproj) })), machine(16384));
+  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: getOpts(m.path).vision ? sizeOf(m.mmproj) : null })), machine(16384));
   fits = Object.fromEntries(ms.map((m, i) => [m.path, r[i]]));
   renderLibGrid();
 }
@@ -53,6 +54,8 @@ interface RunStatus { level: "ok" | "warn" | "bad"; label: string; detail: strin
 
 function runStatus(m: LocalModel, f: LocalFit | undefined): RunStatus {
   const ver = S.binary?.installed?.version ?? "this KoboldCpp";
+  if (m.format === "mlx") return { level: "bad", label: "MLX", detail: "Apple MLX model: runs in LM Studio, not in KoboldCpp. Look for a GGUF version of it.", start: "no" };
+  if (m.format === "safetensors") return { level: "bad", label: "Not GGUF", detail: "Plain safetensors weights. KoboldCpp needs a GGUF version of this model.", start: "no" };
   if (!m.readable) return { level: "bad", label: "Damaged file", detail: "The file can't be read as a GGUF model. Download it again.", start: "no" };
   if (m.missingParts > 0) return { level: "bad", label: "Incomplete", detail: `${m.missingParts} of ${m.parts} parts ${m.missingParts === 1 ? "is" : "are"} missing in this folder.`, start: "no" };
   if (m.support === "no") return { level: "bad", label: "Not supported", detail: `KoboldCpp ${ver} doesn't know the “${m.architecture}” architecture. A newer KoboldCpp may.`, start: "no" };
@@ -157,7 +160,9 @@ function startModel(m: LocalModel) {
   if (m.kind === "Image") Object.assign(cfg, { model_param: "", sdmodel: m.path });
   if (m.kind === "Speech") Object.assign(cfg, { model_param: "", [m.file.toLowerCase().includes("whisper") ? "whispermodel" : "ttsmodel"]: m.path });
   if (m.kind === "Embedding") Object.assign(cfg, { model_param: "", embeddingsmodel: m.path });
-  if (m.mmproj) cfg.mmproj = m.mmproj;
+  const o = getOpts(m.path);
+  if (m.mmproj && o.vision) cfg.mmproj = m.mmproj;
+  if (m.mtp && o.mtp) cfg.usemtp = true;
   const go = async () => { if (S.running) await stop(); launch(m.name, cfg); };
   go();
 }
@@ -383,19 +388,30 @@ function renderLibGrid() {
           : st.start === "yes" ? h("button", { class: "go-start", onclick: () => startModel(m) }, "Start")
           : st.start === "try" ? h("button", { onclick: () => startModel(m), title: st.detail }, "Try anyway")
           : h("button", { disabled: true, title: st.detail }, "Start"),
-        h("button", { onclick: () => moveModel(m) }, "Move…"),
-        h("button", { class: "ghost", onclick: () => { L.confirm = m.path; renderLibGrid(); } }, "Remove"));
+        ...(m.format === "gguf" ? [
+          h("button", { onclick: () => moveModel(m) }, "Move…"),
+          h("button", { class: "ghost", onclick: () => { L.confirm = m.path; renderLibGrid(); } }, "Remove")] : []));
+    // Optional parts this model offers: the vision file and MTP layers.
+    const o = getOpts(m.path);
+    const optBox = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
+      h("label", { class: "opt", for: id, title }, checkbox(id, on, (v) => { set(v); fitKey = ""; loadFits(); }), label);
+    const opts = m.format === "gguf" && (m.mmproj || m.mtp)
+      ? h("div", { class: "opts" },
+          m.mmproj ? optBox(`vis-${m.path}`, "Vision", "Load the vision file so the model can see images (needs more memory)", o.vision, (v) => setOpts(m.path, { vision: v })) : null,
+          m.mtp ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v })) : null)
+      : null;
     grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
       h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),
         h("span", { class: `pill ${st.level === "ok" ? "p-ok" : st.level === "warn" ? "p-warn" : "p-bad"}`, title: st.detail }, st.label)),
       h("h4", {}, m.name),
       h("div", { class: "tags" }, [m.sizeLabel, m.quant, m.architecture, m.parts > 1 ? `${m.parts} parts` : null].filter(Boolean).join(" · ")),
-      kv("Type", KIND_LABEL[m.kind]), kv("Size", fmtBytes(m.size)),
+      kv("Type", KIND_LABEL[m.kind] + (m.format === "mlx" ? " (MLX)" : m.format === "safetensors" ? " (safetensors)" : "")), kv("Size", fmtBytes(m.size)),
       kv("Context", m.contextLength ? `${Math.round(m.contextLength / 1024)}K` : "–"),
       kv("Layers", m.layers ?? "–"),
       kv("Drive", m.drive === "/" ? "System disk" : m.drive ?? "–"),
       kv("Last used", ago(m.lastUsed)),
       st.detail ? h("div", { class: `runline ${st.level}` }, st.detail) : null,
+      opts,
       acts));
   }
   const empty = view.models.length === 0

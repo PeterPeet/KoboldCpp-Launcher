@@ -154,6 +154,13 @@ First full version built in six phases (commits on `main`). Decisions made on th
   vision and embedding models), memory (KoboldCpp's layer estimate with the GGUF layout at 16K
   context). Green Start / "Try anyway" (too big, architecture unknown to a newer build) / disabled.
   A filter shows only models that run here.
+- **MLX and safetensors** model folders (config.json + *.safetensors, e.g. LM Studio's MLX
+  downloads) are listed in the library but marked as not runnable: KoboldCpp is llama.cpp-based
+  and loads GGUF only.
+- **Vision / MTP checkboxes:** models with a vision file get "Vision" (default on; off = the
+  mmproj is neither downloaded nor loaded); local GGUFs with MTP layers
+  (`<arch>.nextn_predict_layers` > 0) get "MTP (faster)" (default off; `--usemtp`). Stored per
+  model in localStorage; Advanced setup › Model has the same MTP switch.
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.
