@@ -6,6 +6,11 @@
 //! Reads the launcher's data folder (settings, models, KoboldCpp), writes nothing there; the
 //! result goes to `shots-data/fixture.json` in the repository (git-ignored: local paths).
 
+// Not on Windows: a test program that links Tauri's window code needs the Windows manifest the
+// app embeds, and fails to start without it (STATUS_ENTRYPOINT_NOT_FOUND). Screenshots are
+// taken on a Mac anyway.
+#![cfg(not(windows))]
+
 use kobold_launcher_lib::commands::{self as c, AppState, LocalFitInput, Machine};
 use kobold_launcher_lib::{fit, hf};
 use serde_json::{json, Map, Value};
