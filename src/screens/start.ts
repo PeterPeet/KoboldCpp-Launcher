@@ -71,12 +71,14 @@ async function loadPopular() {
   if (S.popularKey === key) render();
 }
 
-/** "Official" (maker's own account), "Quant by X", or "Finetune". */
+/** "Official" (the maker's own account) or "Quant by <uploader>". */
 export function kindPill(m: { kind: string; author: string }) {
   if (m.kind === "official") return h("span", { class: "pill p-ok", title: "Uploaded by the model maker" }, "Official");
-  if (m.kind === "quant") return h("span", { class: "pill p-mute", title: "Unchanged model, quantized by someone else" }, `Quant by ${m.author}`);
-  return h("span", { class: "pill p-acc", title: "A changed version of a model" }, "Finetune");
+  return h("span", { class: "pill p-mute", title: `Uploaded by ${m.author}` }, `Quant by ${m.author}`);
 }
+
+/** Everything this row would start with is on disk (depends on the Vision choice). */
+const isDownloaded = (m: PopularItem) => m.modelDownloaded && (!m.mmproj || !getOpts(m.id).vision || m.mmprojDownloaded);
 
 /* ---------- actions ---------- */
 
@@ -106,6 +108,7 @@ function startPopular(m: PopularItem) {
   if (vision) files.push({ url: m.mmproj![0], size: m.mmproj![1] });
   const cfg: Record<string, unknown> = { model_param: m.urls[0], contextsize: 16384 };
   if (vision) cfg.mmproj = m.mmproj![0];
+  if (m.mtp && getOpts(m.id).mtp) cfg.usemtp = true;
   getAndStart("m:" + m.id, m.name, files, backendFor(cfg));
 }
 
@@ -181,20 +184,21 @@ function popularSection() {
   if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your model sources." : "Nothing fits. Check that the makers are on in Model Sources."));
   for (const m of pop.items) {
     const key = "m:" + m.id;
-    const ctl = goControl(key, m.name, () => startPopular(m), { installed: m.downloaded });
+    const ctl = goControl(key, m.name, () => startPopular(m), { installed: isDownloaded(m) });
+    // Switching an option on can need files that aren't here yet: the button follows.
+    const opt = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
+      h("label", { class: "pill p-mute opt", for: id, title }, checkbox(id, on, (v) => { set(v); render(); }), label);
     list.append(h("div", { class: "row" },
       h("div", { class: "mono-badge fam-" + famClass(m) }, m.name.slice(0, 2)),
       h("div", { class: "main" },
         h("div", { class: "name" }, m.name,
           S.family === null && m.family ? h("span", { class: "pill p-fam" }, families.find((f) => f[0] === m.family)?.[1] ?? m.family) : null,
-          m.downloaded ? h("span", { class: "pill p-ok" }, "Downloaded") : null,
+          isDownloaded(m) ? h("span", { class: "pill p-ok" }, "Downloaded") : null,
           kindPill(m),
           m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
           ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
-          m.mmproj
-            ? h("label", { class: "pill p-mute opt", for: `vis-${m.id}`, title: "Also download and load the vision file so the model can see images" },
-                checkbox(`vis-${m.id}`, getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })), "Vision")
-            : null),
+          m.mmproj ? opt(`vis-${m.id}`, "Vision", "Also download and load the vision file so the model can see images", getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })) : null,
+          m.mtp ? opt(`mtp-${m.id}`, "MTP", "Use the model's MTP layers for faster answers (needs a bit more memory)", getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
         h("div", { class: "sub" }, [m.params, m.pick.quant, fmtBytes(m.pick.size), `about ${estSpeed(m.pick.size, m.pick.fit)} tokens/s`].filter(Boolean).join(" · ")),
         h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
         S.dl[key] ? ctl : null),

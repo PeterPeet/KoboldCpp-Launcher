@@ -400,6 +400,12 @@ pub struct PopularItem {
     pub mmproj: Option<(String, u64)>,
     /// All files are already on this computer: the button says Start.
     pub downloaded: bool,
+    /// The model file(s) are on this computer.
+    pub model_downloaded: bool,
+    /// The vision file is on this computer (false when there is none).
+    pub mmproj_downloaded: bool,
+    /// The repo ships MTP layers (see `RepoFiles::mtp`).
+    pub mtp: bool,
 }
 
 #[derive(Serialize)]
@@ -453,9 +459,10 @@ async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, can
         let urls: Vec<String> = q.files.iter().map(|p| crate::hf::resolve_url(&m.id, p)).collect();
         let mmproj = f.best_mmproj().map(|(p, s)| (crate::hf::resolve_url(&m.id, p), *s));
         let single = urls.len() == 1;
-        let downloaded = urls.iter().all(|u| local_file(models, u, single.then_some(pick.size)).is_some())
-            && mmproj.as_ref().is_none_or(|(u, s)| local_file(models, u, Some(*s)).is_some());
-        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded });
+        let model_downloaded = urls.iter().all(|u| local_file(models, u, single.then_some(pick.size)).is_some());
+        let mmproj_downloaded = mmproj.as_ref().is_some_and(|(u, s)| local_file(models, u, Some(*s)).is_some());
+        let downloaded = model_downloaded && (mmproj.is_none() || mmproj_downloaded);
+        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded, model_downloaded, mmproj_downloaded, mtp: f.mtp });
     }
     // Keep ranking order, but a normal quant beats a squeezed fallback.
     items.sort_by_key(|i| i.pick.fallback);

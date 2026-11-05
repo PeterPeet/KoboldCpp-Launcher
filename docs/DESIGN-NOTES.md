@@ -133,8 +133,8 @@ First full version built in six phases (commits on `main`). Decisions made on th
 - **Popular list** shows text and vision-chat models only (image/voice come from templates).
   Uploader subfolders and files that are helpers (`MTP/`, `dspark`, drafts, imatrix) are skipped;
   quant names are found anywhere in a file name (Google: `gemma-4-E4B_q4_0-it.gguf`).
-- **Official** = uploaded by the model maker's own account (known maker list). Others are
-  "Quant by <uploader>" (faithful quant of an original) or "Finetune".
+- **Official** = uploaded by the model maker's own account (known maker list); everything else is
+  labeled "Quant by <uploader>" (no separate finetune label in the UI).
 - **Sources:** each maker is its own built-in source, on by default (google, Qwen, zai-org,
   deepseek-ai, mistralai, meta-llama, openai, nvidia), plus unsloth; bartowski and TheDrummer
   optional. Old settings are migrated (the former combined "labs" entry is replaced).
@@ -157,10 +157,12 @@ First full version built in six phases (commits on `main`). Decisions made on th
 - **MLX and safetensors** model folders (config.json + *.safetensors, e.g. LM Studio's MLX
   downloads) are listed in the library but marked as not runnable: KoboldCpp is llama.cpp-based
   and loads GGUF only.
-- **Vision / MTP checkboxes:** models with a vision file get "Vision" (default on; off = the
-  mmproj is neither downloaded nor loaded); local GGUFs with MTP layers
-  (`<arch>.nextn_predict_layers` > 0) get "MTP (faster)" (default off; `--usemtp`). Stored per
-  model in localStorage; Advanced setup › Model has the same MTP switch.
+- **Vision / MTP checkboxes:** only where available, both on by default; a choice the user makes
+  is kept per model (localStorage, only explicit choices stored). Vision off = the mmproj is
+  neither downloaded nor loaded. MTP (`--usemtp`): local GGUFs with
+  `<arch>.nextn_predict_layers` > 0; on Hugging Face, repos that ship `MTP/` or `mtp-` files
+  (unsloth's convention). If a needed file is missing (e.g. Vision switched on), the green Start
+  turns back into "Get and start", which downloads only what is missing.
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.

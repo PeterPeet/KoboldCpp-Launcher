@@ -396,14 +396,11 @@ function renderLibGrid() {
     const optBox = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
       h("label", { class: "opt", for: id, title }, checkbox(id, on, (v) => { set(v); fitKey = ""; loadFits(); }), label);
     const textual = m.kind === "Text" || m.kind === "Vision";
-    const mtpBox = m.mtp
-      ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v }))
-      : h("label", { class: "opt off", title: "This model file has no MTP layers. Some newer models (e.g. Qwen 3.5+ from unsloth) have them for faster answers." },
-          h("input", { type: "checkbox", disabled: true, "aria-label": "MTP (not in this model)" }), "MTP");
-    const opts = m.format === "gguf" && textual
+    // Only options this model really has: a vision file, MTP layers. Both on by default.
+    const opts = m.format === "gguf" && textual && (m.mmproj || m.mtp)
       ? h("div", { class: "opts" },
           m.mmproj ? optBox(`vis-${m.path}`, "Vision", "Load the vision file so the model can see images (needs more memory)", o.vision, (v) => setOpts(m.path, { vision: v })) : null,
-          mtpBox)
+          m.mtp ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs a bit more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v })) : null)
       : null;
     grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
       h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),

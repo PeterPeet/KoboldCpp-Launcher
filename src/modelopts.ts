@@ -8,22 +8,36 @@ export interface ModelOpts {
   mtp: boolean;
 }
 
-const DEFAULTS: ModelOpts = { vision: true, mtp: false };
-const key = (id: string) => `kl-opts:${id}`;
+/** Both on unless the user switches them off for a model (that choice is kept). */
+const DEFAULTS: ModelOpts = { vision: true, mtp: true };
+// Only choices the user made are stored, so a default stays a default.
+const key = (id: string) => `kl-opt2:${id}`;
+/** Earlier versions stored both values on any change; only their Vision choice was a real one. */
+const oldKey = (id: string) => `kl-opts:${id}`;
 
-export function getOpts(id: string): ModelOpts {
+function stored(id: string): Partial<ModelOpts> {
   try {
     const raw = localStorage.getItem(key(id));
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : { ...DEFAULTS };
+    if (raw) return JSON.parse(raw);
+    const old = localStorage.getItem(oldKey(id));
+    if (old) {
+      const v = JSON.parse(old).vision;
+      return typeof v === "boolean" ? { vision: v } : {};
+    }
   } catch {
-    return { ...DEFAULTS };
+    /* storage unavailable or broken entry */
   }
+  return {};
+}
+
+export function getOpts(id: string): ModelOpts {
+  return { ...DEFAULTS, ...stored(id) };
 }
 
 export function setOpts(id: string, patch: Partial<ModelOpts>) {
   try {
-    localStorage.setItem(key(id), JSON.stringify({ ...getOpts(id), ...patch }));
+    localStorage.setItem(key(id), JSON.stringify({ ...stored(id), ...patch }));
   } catch {
-    /* storage unavailable: choice lasts until the next render only */
+    /* storage unavailable: the choice lasts until the app restarts */
   }
 }

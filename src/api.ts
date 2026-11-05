@@ -52,11 +52,17 @@ export interface Ranked {
 }
 export interface SearchHit extends Ranked { typical: [string, number] | null }
 export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[] }
-export interface PopularItem extends Ranked { pick: QuantPick; urls: string[]; mmproj: [string, number] | null; downloaded: boolean }
+export interface PopularItem extends Ranked {
+  pick: QuantPick; urls: string[]; mmproj: [string, number] | null;
+  /** Everything (model + vision file) is on this computer. */
+  downloaded: boolean; modelDownloaded: boolean; mmprojDownloaded: boolean;
+  /** The repo ships MTP layers (faster answers with --usemtp). */
+  mtp: boolean;
+}
 export type SortOrder = "trending" | "downloads" | "likes" | "newest";
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
 export interface QuantFile { quant: string; label: string; files: string[]; size: number }
-export interface RepoFiles { quants: QuantFile[]; mmproj: [string, number][] }
+export interface RepoFiles { quants: QuantFile[]; mmproj: [string, number][]; mtp: boolean }
 export interface DlProgress { id: string; done: number; total: number | null; speed: number; file: string }
 export interface Source {
   id: string; name: string; builtin: boolean; on: boolean; desc: string;

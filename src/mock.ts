@@ -57,7 +57,7 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
     const p = pick(x.quants, m);
     if (!p) { tooBig++; continue; }
     kept++;
-    const item: PopularItem = { ...toRanked(x, si), pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF") };
+    const item: PopularItem = { ...toRanked(x, si), pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF"), modelDownloaded: x.repo.includes("LFM3-1.7B-GGUF") || x.repo.includes("Qwen3-VL"), mmprojDownloaded: false, mtp: x.repo.includes("Qwen3.8") };
     const cur = best.get(x.base);
     if (!cur || si < cur.source) best.set(x.base, item);
   }
@@ -81,6 +81,7 @@ export function mockRepoFiles(repo: string): RepoFiles {
   return {
     quants: Object.entries(x?.quants ?? { Q4_K_M: 4.6 }).map(([q, s]) => ({ quant: q, label: q, files: [`model-${q}.gguf`], size: s * GB })),
     mmproj: x?.tags.includes("sees images") ? [["mmproj-F16.gguf", 0.9 * GB]] : [],
+    mtp: !!x?.repo.includes("Qwen3.8"),
   };
 }
 

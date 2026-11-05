@@ -488,6 +488,9 @@ pub struct RepoFiles {
     pub quants: Vec<QuantFile>,
     /// Vision projector files (`mmproj-*.gguf`) with sizes.
     pub mmproj: Vec<(String, u64)>,
+    /// The repo ships MTP files (`MTP/…`, `mtp-…`): its models have multi-token-prediction
+    /// layers that KoboldCpp can use (`--usemtp`). unsloth publishes them this way.
+    pub mtp: bool,
 }
 
 impl RepoFiles {
@@ -618,7 +621,11 @@ pub fn parse_tree(entries: &[TreeEntry]) -> RepoFiles {
             groups.push(QuantFile { quant, label, files: vec![e.path.clone()], size: e.size });
         }
     }
-    RepoFiles { quants: groups, mmproj }
+    let mtp = entries.iter().any(|e| {
+        let l = e.path.to_ascii_lowercase();
+        l.starts_with("mtp/") || l.rsplit('/').next().is_some_and(|f| f.starts_with("mtp-"))
+    });
+    RepoFiles { quants: groups, mmproj, mtp }
 }
 
 /// Download URL of a repo file.
@@ -728,6 +735,7 @@ mod tests {
         assert_eq!(bf16.size, 49986159616 + 4671576000);
         assert!(f.quants.iter().all(|q| !q.files[0].contains("imatrix") && !q.files[0].starts_with("MTP/")));
         assert_eq!(f.best_mmproj().unwrap().0, "mmproj-F16.gguf");
+        assert!(f.mtp, "unsloth's Qwen3.8 repo has an MTP/ folder");
         assert!(f.sizes().iter().any(|(q, _)| q == "Q6_K"));
     }
 
@@ -738,6 +746,7 @@ mod tests {
         assert_eq!(f.quants.len(), 1);
         assert_eq!(f.quants[0].quant, "Q4_0");
         assert_eq!(f.mmproj.len(), 1);
+        assert!(!f.mtp);
     }
 
     #[test]
