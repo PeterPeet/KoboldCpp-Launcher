@@ -111,7 +111,7 @@ Open question: follow KoboldCpp or Esobold releases.
 ## Implementation (2026-11-05)
 
 - **Esobold mode** (Advanced setup › Esobold ⚠️):
-  - A warning page; the switch unlocks after typing "I know what I am doing" (case and spaces
+  - A warning page; the switch unlocks after typing "I know what I am doing, give me Esobold!" (case and spaces
     don't matter). Switching back needs no phrase. Refused while a model runs.
   - Esobold = `esolithe/esobold` releases (tags like `RMv1.36.3`, same asset names as KoboldCpp
     plus `koboldcpp-linux-x64-rocm`, no oldpc and no Linux ARM build; SHA-256 digests checked).

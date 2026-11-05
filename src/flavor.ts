@@ -16,7 +16,7 @@ export const liteName = () => (eso() ? "Esolite" : "Lite");
 export const repoUrl = () => (eso() ? "https://github.com/esolithe/esobold" : "https://github.com/LostRuins/koboldcpp");
 
 /** The phrase that unlocks the switch (case and surrounding spaces don't matter). */
-export const MANTRA = "I know what I am doing";
+export const MANTRA = "I know what I am doing, give me Esobold!";
 export const mantraOk = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase() === MANTRA.toLowerCase();
 
 /** Update everything outside the screens that depends on the mode. */
