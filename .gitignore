@@ -1,8 +1,27 @@
-.DS_Store
+# Secrets
 .env
 .env.*
 !.env.example
 *.pem
 *.key
+
+# Build output
 /target/
+src-tauri/target/
+src-tauri/gen/schemas
 node_modules/
+dist
+dist-ssr
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.sw?
