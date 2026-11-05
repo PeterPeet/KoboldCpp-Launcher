@@ -124,6 +124,8 @@ impl ServerManager {
         }
         let mut child = cmd.spawn().map_err(ServerError::Spawn)?;
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+        // Everything KoboldCpp prints also goes to <config>.log (e.g. runs/last-run.log).
+        let log_file = std::fs::File::create(config.with_extension("log")).ok().map(|f| Arc::new(Mutex::new(f)));
         let run = {
             let mut g = self.inner.lock().unwrap();
             g.run += 1;
@@ -138,6 +140,7 @@ impl ServerManager {
         for pipe in [stdout.map(|p| Box::new(p) as Box<dyn Read + Send>), stderr.map(|p| Box::new(p) as Box<dyn Read + Send>)].into_iter().flatten() {
             let inner = self.inner.clone();
             let notify = notify.clone();
+            let log_file = log_file.clone();
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(pipe);
                 let mut buf = Vec::new();
@@ -159,6 +162,11 @@ impl ServerManager {
                     let line = String::from_utf8_lossy(&buf).trim_end().to_string();
                     if line.is_empty() {
                         continue;
+                    }
+                    if let Some(f) = &log_file
+                        && let Ok(mut f) = f.lock()
+                    {
+                        let _ = writeln!(f, "{line}");
                     }
                     {
                         let mut g = inner.lock().unwrap();
@@ -314,6 +322,7 @@ mod tests {
         assert!(matches!(m.start(&bin, &cfg, dir.path(), port, Arc::new(|_| {})), Err(ServerError::AlreadyRunning)));
         assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port });
         assert!(m.logs(10).iter().any(|l| l.contains("fake koboldcpp --config") && l.contains("--skiplauncher")));
+        assert!(std::fs::read_to_string(dir.path().join("run.log")).unwrap().contains("fake koboldcpp"));
         assert!(local_get(port, "/api/extra/version", Duration::from_secs(1)).unwrap().contains("9.9"));
         m.stop(Duration::from_secs(5));
         assert_eq!(m.status(), ServerStatus::Stopped);

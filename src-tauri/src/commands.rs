@@ -37,7 +37,14 @@ impl AppState {
     pub fn new(root: PathBuf) -> Self {
         let dirs = Dirs::new(root);
         let _ = dirs.ensure();
-        let settings = Settings::load(&dirs.settings_file());
+        let mut settings = Settings::load(&dirs.settings_file());
+        // A KoboldCpp in bin/ that settings don't know about (e.g. lost record): use the newest.
+        if settings.binary.as_ref().is_none_or(|b| !b.path.is_file())
+            && let Some(found) = binary::find_installed(&dirs.bin())
+        {
+            settings.binary = Some(found);
+            let _ = settings.save(&dirs.settings_file());
+        }
         Self {
             dirs,
             settings: Mutex::new(settings),
@@ -79,8 +86,33 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> CmdResult<Settings> {
-    state.update_settings(|s| *s = settings)
+pub fn save_settings(state: State<'_, AppState>, patch: SettingsPatch) -> CmdResult<Settings> {
+    state.update_settings(|s| patch.apply(s))
+}
+
+/// The settings the UI may change. The install record, library folders and usage data are only
+/// changed by their own commands, so a stale copy in the UI can never overwrite them.
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsPatch {
+    pub check_updates_on_start: Option<bool>,
+    pub include_prereleases: Option<bool>,
+    pub sources: Option<Vec<crate::hf::Source>>,
+}
+
+impl SettingsPatch {
+    pub fn apply(self, s: &mut Settings) {
+        if let Some(v) = self.check_updates_on_start {
+            s.check_updates_on_start = v;
+        }
+        if let Some(v) = self.include_prereleases {
+            s.include_prereleases = v;
+        }
+        if let Some(mut v) = self.sources {
+            v.retain(|x| x.builtin || crate::hf::valid_source_name(&x.name));
+            s.sources = v;
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -347,25 +379,36 @@ fn now_unix() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-#[tauri::command]
-pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::RankOptions, machine: Machine) -> CmdResult<PopularResult> {
-    let h = hf(&state);
-    let sources = state.settings().sources;
+/// Candidates from all enabled sources; with a family, searched by its term.
+async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], terms: &[&str]) -> (Vec<crate::hf::ModelEntry>, Vec<String>) {
+    let terms: Vec<Option<&str>> = if terms.is_empty() { vec![None] } else { terms.iter().map(|t| Some(*t)).collect() };
+    let pairs: Vec<(&crate::hf::Source, Option<&str>)> = sources.iter().filter(|s| s.on && s.comps.is_some()).flat_map(|s| terms.iter().map(move |t| (s, *t))).collect();
+    let jobs = pairs.into_iter().map(|(s, term)| async move {
+        let r = match (s.id.as_str(), term) {
+            ("labs", None) => h.trending(100).await,
+            ("labs", Some(t)) => h.trending_search(t, 60).await,
+            (_, None) => h.by_author(&s.name, 40).await,
+            (_, Some(t)) => h.by_author_search(&s.name, t, 30).await,
+        };
+        (s.name.clone(), r)
+    });
     let mut entries = Vec::new();
     let mut errors = Vec::new();
-    for s in sources.iter().filter(|s| s.on && s.comps.is_some()) {
-        let r = if s.id == "labs" { h.trending(100).await } else { h.by_author(&s.name, 40).await };
+    for (name, r) in futures_util::future::join_all(jobs).await {
         match r {
             Ok(mut l) => entries.append(&mut l),
-            Err(e) => errors.push(format!("{}: {e}", s.name)),
+            Err(e) => errors.push(format!("{name}: {e}")),
         }
     }
-    let ranked = crate::hf::rank(&entries, &sources, options, now_unix());
-    let top: Vec<crate::hf::Ranked> = ranked.items.into_iter().take(24).collect();
-    let files = futures_util::future::join_all(top.iter().map(|m| h.files(&m.id))).await;
-    let mut items = Vec::new();
+    (entries, errors)
+}
+
+/// Pick a quant for each candidate (in order) until `want` fit; counts the ones too big.
+async fn with_picks(h: &crate::hf::client::Hf<'_>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
+    let files = futures_util::future::join_all(cands.iter().map(|m| h.files(&m.id))).await;
+    let mut items: Vec<PopularItem> = Vec::new();
     let mut too_big = 0;
-    for (m, f) in top.into_iter().zip(files) {
+    for (m, f) in cands.into_iter().zip(files) {
         let Ok(f) = f else { continue };
         let Some(pick) = fit::pick_quant(&f.sizes(), machine.context, machine.vram, machine.ram, machine.unified) else {
             too_big += 1;
@@ -376,32 +419,99 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
         let mmproj = f.best_mmproj().map(|(p, s)| (crate::hf::resolve_url(&m.id, p), *s));
         items.push(PopularItem { model: m, pick, urls, mmproj });
     }
-    Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors })
+    // Keep ranking order, but a normal quant beats a squeezed fallback.
+    items.sort_by_key(|i| i.pick.fallback);
+    items.truncate(want);
+    (items, too_big)
+}
+
+/// `family`: None = "Top" (the best fitting model of each family), else that family's list.
+#[tauri::command]
+pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::RankOptions, machine: Machine, family: Option<String>) -> CmdResult<PopularResult> {
+    let h = hf(&state);
+    let sources = state.settings().sources;
+    let now = now_unix();
+    if let Some(fam) = family {
+        let (_, _, terms) = crate::hf::FAMILIES.iter().find(|f| f.0 == fam).ok_or("Unknown model family")?;
+        let (entries, errors) = gather(&h, &sources, terms).await;
+        let ranked = crate::hf::rank(&entries, &sources, options, now);
+        let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(fam.as_str())).take(30).collect();
+        let (items, too_big) = with_picks(&h, cands, &machine, 20).await;
+        return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors });
+    }
+    let per_family = crate::hf::FAMILIES.iter().map(|(id, _, terms)| {
+        let (h, sources, machine) = (&h, &sources, &machine);
+        async move {
+            let (entries, errors) = gather(h, sources, terms).await;
+            let ranked = crate::hf::rank(&entries, sources, options, now);
+            let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(*id)).take(12).collect();
+            let (items, _) = with_picks(h, cands, machine, 1).await;
+            (items, errors)
+        }
+    });
+    let mut items = Vec::new();
+    let mut errors = Vec::new();
+    for (mut i, mut e) in futures_util::future::join_all(per_family).await {
+        items.append(&mut i);
+        errors.append(&mut e);
+    }
+    errors.sort();
+    errors.dedup();
+    Ok(PopularResult { items, too_big: 0, dupes: 0, errors })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    #[serde(flatten)]
+    pub model: crate::hf::Ranked,
+    /// Q4_K_M size if the repo has it, else the closest common quant: (quant, bytes).
+    pub typical: Option<(String, u64)>,
 }
 
 #[tauri::command]
-pub async fn search_models(state: State<'_, AppState>, query: String) -> CmdResult<Vec<crate::hf::Ranked>> {
-    let entries = hf(&state).search(&query, 50).await.map_err(err)?;
+pub async fn search_models(state: State<'_, AppState>, query: String) -> CmdResult<Vec<SearchHit>> {
+    let h = hf(&state);
+    let entries = h.search(&query, 30).await.map_err(err)?;
     // Search shows everything that matches, from any uploader (no source filter).
     let now = now_unix();
+    let files = futures_util::future::join_all(entries.iter().map(|e| h.files(&e.id))).await;
     Ok(entries
         .iter()
-        .map(|e| crate::hf::Ranked {
-            id: e.id.clone(),
-            name: crate::hf::display_name(e.repo_name()),
-            author: e.author().into(),
-            params: crate::hf::params_from_name(e.repo_name()),
-            official: crate::hf::is_official(e),
-            uncensored: crate::hf::is_uncensored(e),
-            likes: e.likes,
-            downloads: e.downloads,
-            age_days: crate::hf::age_days(e.created_at.as_deref(), now),
-            score: crate::hf::score(e, now),
-            source: 0,
-            base_model: e.base_model().map(str::to_string),
-            tags: e.tags.clone(),
+        .zip(files)
+        .map(|(e, f)| {
+            let kind = crate::hf::kind_of(e);
+            let typical = f.ok().and_then(|f| {
+                ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q6_K", "Q8_0"].iter().find_map(|q| f.quant(q).map(|x| (q.to_string(), x.size)))
+            });
+            SearchHit {
+                model: crate::hf::Ranked {
+                    id: e.id.clone(),
+                    name: crate::hf::display_name(e.repo_name()),
+                    author: e.author().into(),
+                    params: crate::hf::params_from_name(e.repo_name()),
+                    kind,
+                    official: kind == crate::hf::Kind::Official,
+                    family: crate::hf::family_of(&e.id).map(str::to_string),
+                    uncensored: crate::hf::is_uncensored(e),
+                    likes: e.likes,
+                    downloads: e.downloads,
+                    age_days: crate::hf::age_days(e.created_at.as_deref(), now),
+                    score: crate::hf::score(e, now),
+                    source: 0,
+                    base_model: e.base_model().map(str::to_string),
+                    tags: e.tags.clone(),
+                },
+                typical,
+            }
         })
         .collect())
+}
+
+/// Model families for the start screen filter row: (id, label).
+#[tauri::command]
+pub fn model_families() -> Vec<(String, String)> {
+    crate::hf::FAMILIES.iter().map(|(id, label, _)| (id.to_string(), label.to_string())).collect()
 }
 
 #[tauri::command]
@@ -460,7 +570,7 @@ pub async fn download_files(app: AppHandle, state: State<'_, AppState>, download
             let dest = models.join(&name);
             let (app2, id2, name2) = (app.clone(), id.clone(), name.clone());
             let start = base;
-            let path = download::download(&state.http, download::Request { url, dest: &dest, size: *size, sha256: None }, &cancel, move |p| {
+            let path = download::download_retry(&state.http, download::Request { url, dest: &dest, size: *size, sha256: None }, &cancel, move |p| {
                 let _ = app2.emit("download-progress", DlProgress { id: id2.clone(), done: start + p.done, total, speed: p.speed, file: name2.clone() });
             })
             .await

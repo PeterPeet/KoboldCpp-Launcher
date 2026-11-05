@@ -12,7 +12,7 @@ function persist() {
   saveTimer = window.setTimeout(async () => {
     if (!S.settings) return;
     try {
-      S.settings = await api.saveSettings({ ...S.settings, sources: S.sources });
+      S.settings = await api.saveSettings({ sources: S.sources });
     } catch (e) {
       toast(`Could not save sources: ${e}`);
     }

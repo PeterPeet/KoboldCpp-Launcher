@@ -1,11 +1,11 @@
 // Model library: local models as cards with filters, plus Hugging Face search and download.
 
-import { api, fmtBytes, inTauri, type Fit, type LibraryView, type LocalModel, type Ranked, type RepoFiles } from "../api";
+import { api, fmtBytes, inTauri, type Fit, type LibraryView, type LocalModel, type RepoFiles, type SearchHit } from "../api";
 import { $, checkbox, fmt, h, toast, type Kid } from "../dom";
 import { getAndStart, goControl } from "../downloads";
 import { launch, stop } from "../server";
 import { S, machine, render } from "../state";
-import { famClass, fitPill } from "./start";
+import { famClass, fitPill, kindPill } from "./start";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
 const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
@@ -14,7 +14,8 @@ let view: LibraryView | null = null;
 let loading = false;
 let fits: Record<string, Fit> = {};
 let fitKey = "";
-let search: { q: string; results: Ranked[] | null; error: string; open: string | null; files: RepoFiles | null } = { q: "", results: null, error: "", open: null, files: null };
+let search: { q: string; results: SearchHit[] | null; error: string; open: string | null; files: RepoFiles | null; seq: number } = { q: "", results: null, error: "", open: null, files: null, seq: 0 };
+let searchTimer: number | undefined;
 
 export async function reloadLibrary() {
   loading = true;
@@ -95,10 +96,13 @@ export function renderLibrary() {
   const root = h("div", { class: "lib" });
   const side = h("aside", { class: "side" });
 
-  const q = h("input", { type: "search", id: "libq", placeholder: L.tab === "local" ? "Filter models" : "Search Hugging Face", value: L.tab === "local" ? L.q : search.q, "aria-label": "Search models" }) as HTMLInputElement;
-  q.addEventListener("input", () => { if (L.tab === "local") { L.q = q.value; renderLibGrid(); } else search.q = q.value; });
-  q.addEventListener("keydown", (e) => { if (e.key === "Enter" && L.tab === "discover") runSearch(); });
-  side.append(q);
+  if (L.tab === "local") {
+    const q = h("input", { type: "search", id: "libq", placeholder: "Filter models", value: L.q, "aria-label": "Filter models" }) as HTMLInputElement;
+    q.addEventListener("input", () => { L.q = q.value; renderLibGrid(); });
+    side.append(q);
+  } else {
+    side.append(h("p", { class: "note", style: "margin:0" }, "Search all GGUF models on Hugging Face. Sizes shown are for Q4_K_M, the usual choice."));
+  }
 
   if (view && L.tab === "local") {
     const models = view.models.filter((m) => m.kind !== "Projector");
@@ -153,15 +157,34 @@ export function renderLibrary() {
   return root;
 }
 
+/** Search as you type (short pause first); an empty field clears the list. */
+function onSearchInput(value: string) {
+  search.q = value;
+  clearTimeout(searchTimer);
+  if (value.trim().length < 2) {
+    search.seq++;
+    search.results = null;
+    search.error = "";
+    search.open = null;
+    renderLibGrid();
+    return;
+  }
+  searchTimer = window.setTimeout(runSearch, 350);
+}
+
 async function runSearch() {
-  if (search.q.trim().length < 2) return toast("Type at least two letters");
-  search.results = null;
+  const q = search.q.trim();
+  if (q.length < 2) return;
+  const seq = ++search.seq;
   search.error = "";
   search.open = null;
-  renderLibGrid();
+  if (search.results === null) renderLibGrid();
   try {
-    search.results = await api.search(search.q.trim());
+    const r = await api.search(q);
+    if (seq !== search.seq) return;
+    search.results = r;
   } catch (e) {
+    if (seq !== search.seq) return;
     search.error = String(e);
     search.results = [];
   }
@@ -181,7 +204,7 @@ async function openRepo(id: string) {
   renderLibGrid();
 }
 
-function repoFilesView(r: Ranked) {
+function repoFilesView(r: SearchHit) {
   const f = search.files;
   if (!f) return h("div", { class: "note", style: "margin:6px 0 0" }, "Loading files…");
   if (!f.quants.length) return h("div", { class: "note", style: "margin:6px 0 0" }, "No GGUF model files in this repo.");
@@ -204,23 +227,34 @@ function renderLibGrid() {
   if (!body) return;
 
   if (L.tab === "discover") {
+    // The search field lives outside the results so typing never loses focus.
+    let input = $<HTMLInputElement>("#hfq");
+    if (!input || !body.contains(input)) {
+      input = h("input", { id: "hfq", type: "search", placeholder: "Model name, e.g. gemma 4 e2b", value: search.q, "aria-label": "Search Hugging Face", autocomplete: "off" }) as HTMLInputElement;
+      input.addEventListener("input", () => onSearchInput(input!.value));
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(searchTimer); runSearch(); } });
+      body.replaceChildren(h("div", { class: "addrow" }, input), h("div", { id: "hfResults", style: "display:grid;gap:10px" }));
+      setTimeout(() => input?.focus());
+    }
+    const results = $("#hfResults")!;
     const list = h("div", { class: "list" });
     for (const r of search.results ?? []) {
       list.append(h("div", { class: "row", style: "align-items:flex-start" },
         h("div", { class: `mono-badge fam-${famClass(r)}` }, r.name.slice(0, 2)),
         h("div", { class: "main" },
-          h("div", { class: "name" }, r.name, r.official ? h("span", { class: "pill p-mute" }, "Official") : h("span", { class: "pill p-acc" }, "Finetune"), r.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null),
+          h("div", { class: "name" }, r.name, kindPill(r), r.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null),
           h("div", { class: "repo" }, r.id),
           h("div", { class: "why" }, `${fmt(r.downloads)} downloads this month · ${fmt(r.likes)} likes · ${Math.round(r.ageDays)} days old`),
           search.open === r.id ? repoFilesView(r) : null),
+        h("span", { class: "typ", title: r.typical ? `Size of the ${r.typical[0]} file` : "No common quant found" }, r.typical ? `${r.typical[0]} · ${fmtBytes(r.typical[1])}` : "–"),
         h("button", { onclick: () => openRepo(r.id) }, search.open === r.id ? "Close" : "Choose file")));
     }
-    const intro = h("p", { class: "note", style: "margin:0" }, "Search all GGUF models on Hugging Face. The popular list on the start screen follows your sources.");
-    const form = h("div", { class: "addrow" },
-      (() => { const i = h("input", { id: "hfq", placeholder: "Model name, e.g. qwen3 8b", value: search.q, "aria-label": "Search Hugging Face" }) as HTMLInputElement; i.addEventListener("input", () => (search.q = i.value)); i.addEventListener("keydown", (e) => e.key === "Enter" && runSearch()); return i; })(),
-      h("button", { class: "primary", onclick: runSearch }, "Search"));
-    body.replaceChildren(h("div", { style: "display:grid;gap:10px" }, intro, form,
-      search.results === null ? (search.q ? h("div", { class: "empty" }, "Searching…") : h("div")) : search.error ? h("div", { class: "empty" }, search.error) : search.results.length ? list : h("div", { class: "empty" }, "No GGUF models found.")));
+    const typing = search.q.trim().length >= 2;
+    results.replaceChildren(
+      search.results === null
+        ? (typing ? h("div", { class: "empty" }, "Searching…") : h("div", { class: "empty" }, "Type a model name to search."))
+        : search.error ? h("div", { class: "empty" }, search.error)
+        : search.results.length ? list : h("div", { class: "empty" }, "No GGUF models found."));
     return;
   }
 

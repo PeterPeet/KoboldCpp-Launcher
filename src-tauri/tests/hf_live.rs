@@ -33,3 +33,31 @@ async fn templates_and_popular_list() {
     }
     assert!(!r.items.is_empty());
 }
+
+#[tokio::test]
+#[ignore]
+async fn top_model_per_family() {
+    let http = download::client();
+    let dir = tempfile::tempdir().unwrap();
+    let h = Hf { http: &http, cache: dir.path().to_path_buf() };
+    let sources = hf::default_sources();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    for (id, label, terms) in hf::FAMILIES {
+        let mut entries = Vec::new();
+        for term in *terms {
+            entries.extend(h.by_author_search("unsloth", term, 30).await.unwrap_or_default());
+            entries.extend(h.trending_search(term, 60).await.unwrap_or_default());
+        }
+        let r = hf::rank(&entries, &sources, RankOptions { official_only: true, show_uncensored: false }, now);
+        let mut picks = Vec::new();
+        for m in r.items.iter().filter(|m| m.family.as_deref() == Some(*id)).take(12) {
+            let f = h.files(&m.id).await.unwrap();
+            if let Some(p) = fit::pick_quant(&f.sizes(), 16384, 10 * GB + GB * 7 / 10, 16 * GB, true) {
+                picks.push((p.fallback, format!("{} ({:?}) {} {:.1} GB{}", m.id, m.kind, p.quant, p.size as f64 / GB as f64, if p.fallback { " fallback" } else { "" })));
+            }
+        }
+        picks.sort_by_key(|p| p.0);
+        let shown = picks.into_iter().next().map(|p| p.1);
+        println!("{label:<10} {}", shown.unwrap_or("— nothing fits".into()));
+    }
+}

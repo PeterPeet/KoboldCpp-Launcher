@@ -1,7 +1,7 @@
 // Browser-preview data (only loaded outside the desktop app). Mirrors the Rust logic roughly so
 // the UI can be checked in a normal browser; real numbers come from src-tauri.
 
-import type { Fit, LibraryView, LocalModel, Machine, ModelKind, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
+import type { SearchHit, Fit, LibraryView, LocalModel, Machine, ModelKind, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
 import { DRIVES, LOCAL, MODELS, TEMPLATES } from "./data";
 
 const GB = 1024 ** 3;
@@ -35,13 +35,15 @@ function pick(quants: Record<string, number>, m: Machine): QuantPick | null {
   return f === "none" ? null : { quant: q, size: s, fit: f, fallback: q !== "Q4_K_M" };
 }
 
+const famOf = (n: string) => ["gemma", "qwen", "glm", "deepseek", "mistral", "llama", "nemotron"].find((f) => n.toLowerCase().includes(f) || (f === "mistral" && /cydonia|rocinante/i.test(n))) ?? null;
 const toRanked = (x: (typeof MODELS)[number], source: number): Ranked => ({
-  id: x.repo, name: x.name, author: x.up, params: x.params, official: x.kind === "official", uncensored: x.unc,
+  id: x.repo, name: x.name, author: x.up, params: x.params, uncensored: x.unc,
+  kind: x.kind === "finetune" ? "finetune" : x.labs ? "official" : "quant", official: !!x.labs, family: famOf(x.repo),
   likes: x.likes, downloads: x.dl, ageDays: x.age, source, baseModel: x.base, tags: x.tags.split(" · "),
   score: (Math.log10(x.dl + 1) + 0.6 * Math.log10(x.likes + 1)) * Math.max(0.35, 0.5 ** (x.age / 180)),
 });
 
-export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean }, m: Machine, sources: Source[]): PopularResult {
+export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean }, m: Machine, sources: Source[], family: string | null): PopularResult {
   const on = sources.filter((s) => s.on && s.comps);
   let tooBig = 0;
   const best = new Map<string, PopularItem>();
@@ -58,13 +60,18 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean 
     const cur = best.get(x.base);
     if (!cur || si < cur.source) best.set(x.base, item);
   }
-  const items = [...best.values()].sort((a, b) => b.score - a.score);
+  let items = [...best.values()].sort((a, b) => b.score - a.score);
+  if (family) items = items.filter((i) => i.family === family);
+  else {
+    const seen = new Set<string>();
+    items = items.filter((i) => i.family && !seen.has(i.family) && seen.add(i.family));
+  }
   return { items, tooBig, dupes: kept - items.length, errors: [] };
 }
 
-export function mockSearch(q: string): Ranked[] {
+export function mockSearch(q: string): SearchHit[] {
   const l = q.toLowerCase();
-  return MODELS.filter((x) => (x.name + x.repo).toLowerCase().includes(l)).map((x) => toRanked(x, 0));
+  return MODELS.filter((x) => (x.name + x.repo).toLowerCase().includes(l)).map((x) => ({ ...toRanked(x, 0), typical: x.quants.Q4_K_M ? ["Q4_K_M", x.quants.Q4_K_M * GB] : null }));
 }
 
 export function mockRepoFiles(repo: string): RepoFiles {

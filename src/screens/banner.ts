@@ -1,5 +1,7 @@
 // Server banner shown on the start screen: running / starting / failed, with log drawer.
 
+import { api } from "../api";
+import { reveal } from "../dialogs/update";
 import { h } from "../dom";
 import { logView, openLite, serverPort, stop } from "../server";
 import { S, render } from "../state";
@@ -26,7 +28,9 @@ export function serverBanner(): HTMLElement[] {
     out.push(h("div", { class: "running bad" },
       h("span", { class: "dot", style: "background:var(--bad)" }),
       h("div", { class: "main" }, s.message),
-      logBtn, h("button", { class: "ghost", onclick: () => { S.server = { state: "stopped" }; S.running = null; render(); } }, "Dismiss")));
+      logBtn,
+      h("button", { class: "ghost", onclick: async () => reveal(`${(await api.paths()).data}/runs/last-run.log`) }, "Open log file"),
+      h("button", { class: "ghost", onclick: () => { S.server = { state: "stopped" }; S.running = null; render(); } }, "Dismiss")));
   if (showLog) out.push(logView());
   return out;
 }

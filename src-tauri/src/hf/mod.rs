@@ -99,9 +99,50 @@ pub fn params_from_name(name: &str) -> Option<String> {
     None
 }
 
-/// Official upload: HF says "quantized" (self-declared, so not enough on its own) **and** the
-/// repo name is the base model's name plus a GGUF suffix (design notes).
-pub fn is_official(e: &ModelEntry) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// Uploaded by the model maker's own account (e.g. `google/…`, `Qwen/…`).
+    Official,
+    /// Someone else's faithful quantization of an original model (unsloth, bartowski, …).
+    Quant,
+    /// A changed model (finetune, merge, distill).
+    Finetune,
+}
+
+/// Hugging Face accounts of model makers. "Official" means uploaded by one of these, for its
+/// own model. Anyone can upload a finetune of their own model, so "author = base author" alone
+/// is not enough.
+pub const MAKERS: &[&str] = &[
+    "google", "Qwen", "meta-llama", "mistralai", "deepseek-ai", "zai-org", "THUDM", "openai", "nvidia",
+    "LiquidAI", "microsoft", "ibm-granite", "allenai", "HuggingFaceTB", "CohereLabs", "CohereForAI",
+    "ai21labs", "tencent", "baidu", "moonshotai", "MiniMaxAI", "stepfun-ai", "inclusionAI",
+    "ByteDance-Seed", "swiss-ai", "apple", "xai-org", "internlm", "OpenGVLab", "upstage", "tiiuae",
+    "arcee-ai", "NousResearch", "ServiceNow-AI", "Motif-Technologies", "kakaocorp", "LGAI-EXAONE",
+];
+
+pub fn is_maker(author: &str) -> bool {
+    MAKERS.iter().any(|m| m.eq_ignore_ascii_case(author))
+}
+
+/// A maker's own upload of its own model, e.g. `Qwen/Qwen3-8B-GGUF` from `Qwen/Qwen3-8B`.
+pub fn is_manufacturer(e: &ModelEntry) -> bool {
+    is_maker(e.author()) && e.base_model().and_then(|b| b.split('/').next()).is_none_or(|a| a.eq_ignore_ascii_case(e.author()))
+}
+
+pub fn kind_of(e: &ModelEntry) -> Kind {
+    if is_manufacturer(e) && !is_uncensored(e) {
+        Kind::Official
+    } else if is_faithful_quant(e) {
+        Kind::Quant
+    } else {
+        Kind::Finetune
+    }
+}
+
+/// Faithful quantization: HF says "quantized" (self-declared, so not enough on its own) **and**
+/// the repo name is the base model's name plus a GGUF suffix (design notes).
+pub fn is_faithful_quant(e: &ModelEntry) -> bool {
     let Some(base) = e.base_model() else { return false };
     if e.relation() != Some("quantized") {
         return false;
@@ -150,12 +191,44 @@ pub fn score(e: &ModelEntry, now_unix: i64) -> f64 {
 
 /// Key that merges uploads of the same model by different uploaders.
 pub fn canonical_key(e: &ModelEntry) -> String {
-    if is_official(e)
+    if kind_of(e) != Kind::Finetune
         && let Some(b) = e.base_model()
     {
         return b.to_ascii_lowercase();
     }
     clean_name(e.repo_name()).to_ascii_lowercase().replace('_', "-")
+}
+
+/* ---------- families ---------- */
+
+/// Model families shown as filters on the start screen: (id, label, Hugging Face search terms).
+/// HF search matches words, so sub-brands need their own term.
+pub const FAMILIES: &[(&str, &str, &[&str])] = &[
+    ("gemma", "Gemma", &["gemma"]),
+    ("qwen", "Qwen", &["qwen"]),
+    ("glm", "GLM", &["glm"]),
+    ("deepseek", "DeepSeek", &["deepseek"]),
+    ("mistral", "Mistral", &["mistral", "ministral", "devstral", "magistral"]),
+    ("llama", "Llama", &["llama"]),
+    ("gpt-oss", "GPT-oss", &["gpt-oss"]),
+    ("nemotron", "Nemotron", &["nemotron"]),
+];
+
+/// Family of a repo by name. Order matters: a "DeepSeek-R1-Distill-Qwen" is DeepSeek,
+/// a "Llama-Nemotron" is Nemotron.
+pub fn family_of(repo_id: &str) -> Option<&'static str> {
+    let n = repo_id.rsplit('/').next().unwrap_or(repo_id).to_ascii_lowercase();
+    let rules: &[(&str, &[&str])] = &[
+        ("nemotron", &["nemotron"]),
+        ("gpt-oss", &["gpt-oss"]),
+        ("deepseek", &["deepseek"]),
+        ("glm", &["glm"]),
+        ("gemma", &["gemma"]),
+        ("mistral", &["mistral", "magistral", "devstral", "ministral", "mixtral", "codestral"]),
+        ("qwen", &["qwen", "qwq"]),
+        ("llama", &["llama"]),
+    ];
+    rules.iter().find(|(_, keys)| keys.iter().any(|k| n.contains(k))).map(|(id, _)| *id)
 }
 
 /* ---------- sources ---------- */
@@ -189,7 +262,7 @@ pub fn default_sources() -> Vec<Source> {
     };
     vec![
         s("kcppt", "KoboldCpp templates", true, true, None, "Ready-made setups from hf.co/koboldcpp"),
-        s("labs", "Labs' own uploads", true, true, Some((true, false, false)), "Repo author is the base model author"),
+        s("labs", "Labs' own uploads", true, true, Some((true, false, false)), "Official uploads by the model makers"),
         s("unsloth", "unsloth", false, true, Some((true, false, false)), "Official quants of new models"),
         s("bartowski", "bartowski", false, false, Some((true, true, false)), "Official quants and community finetunes"),
         s("TheDrummer", "TheDrummer", false, false, Some((false, true, false)), "Roleplay and story finetunes"),
@@ -203,21 +276,22 @@ pub fn valid_source_name(n: &str) -> bool {
 }
 
 /// Priority index of the first enabled source that offers this entry with an allowed component.
-pub fn source_index(e: &ModelEntry, sources: &[Source], official: bool, uncensored: bool) -> Option<usize> {
+pub fn source_index(e: &ModelEntry, sources: &[Source], original: bool, uncensored: bool) -> Option<usize> {
     sources.iter().filter(|s| s.on && s.comps.is_some()).position(|s| {
         let matches = if s.id == "labs" {
-            e.base_model().is_some_and(|b| b.split('/').next() == Some(e.author()))
+            is_manufacturer(e)
         } else {
             s.name.eq_ignore_ascii_case(e.author())
         };
         let c = s.comps.unwrap();
-        matches && if uncensored { c.unc } else if official { c.official } else { c.finetune }
+        matches && if uncensored { c.unc } else if original { c.official } else { c.finetune }
     })
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RankOptions {
+    /// Only original models (official uploads and faithful quants), no finetunes.
     pub official_only: bool,
     pub show_uncensored: bool,
 }
@@ -229,7 +303,10 @@ pub struct Ranked {
     pub name: String,
     pub author: String,
     pub params: Option<String>,
+    pub kind: Kind,
+    /// Uploaded by the model maker (kind == Official).
     pub official: bool,
+    pub family: Option<String>,
     pub uncensored: bool,
     pub likes: u64,
     pub downloads: u64,
@@ -261,19 +338,22 @@ pub fn rank(entries: &[ModelEntry], sources: &[Source], opts: RankOptions, now_u
         if !is_text_model(e) {
             continue;
         }
-        let official = is_official(e);
+        let kind = kind_of(e);
+        let original = kind != Kind::Finetune;
         let uncensored = is_uncensored(e);
-        if opts.official_only && !official || uncensored && !opts.show_uncensored {
+        if opts.official_only && !original || uncensored && !opts.show_uncensored {
             continue;
         }
-        let Some(si) = source_index(e, sources, official, uncensored) else { continue };
+        let Some(si) = source_index(e, sources, original, uncensored) else { continue };
         kept += 1;
         let r = Ranked {
             id: e.id.clone(),
             name: display_name(e.repo_name()),
             author: e.author().to_string(),
             params: params_from_name(e.repo_name()),
-            official,
+            kind,
+            official: kind == Kind::Official,
+            family: family_of(&e.id).map(str::to_string),
             uncensored,
             likes: e.likes,
             downloads: e.downloads,
@@ -333,20 +413,19 @@ impl RepoFiles {
         ["F16", "BF16", "Q8_0"].iter().find_map(|q| self.mmproj.iter().find(|(p, _)| p.to_ascii_uppercase().contains(&format!("-{q}.")))).or(self.mmproj.first())
     }
 
-    /// Sizes per normalised quant (smallest file of each quant), for `fit::pick_quant`.
+    /// Size per normalised quant (the file set `quant()` would download), for `fit::pick_quant`.
     pub fn sizes(&self) -> Vec<(String, u64)> {
-        let mut m: HashMap<&str, u64> = HashMap::new();
-        for q in &self.quants {
-            let e = m.entry(&q.quant).or_insert(q.size);
-            *e = (*e).min(q.size);
-        }
-        m.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+        let mut names: Vec<&str> = self.quants.iter().map(|q| q.quant.as_str()).collect();
+        names.sort();
+        names.dedup();
+        names.into_iter().filter_map(|n| self.quant(n).map(|q| (n.to_string(), q.size))).collect()
     }
 
-    /// The file set for a quant: plain upload preferred over special flavours.
+    /// The file set for a quant: plain upload preferred over special flavours; if two claim the
+    /// same name, the larger one is the model (a small one is a leftover helper).
     pub fn quant(&self, quant: &str) -> Option<&QuantFile> {
         let mut c: Vec<&QuantFile> = self.quants.iter().filter(|q| q.quant.eq_ignore_ascii_case(quant)).collect();
-        c.sort_by_key(|q| (q.label != q.quant, q.size));
+        c.sort_by_key(|q| (q.label != q.quant, std::cmp::Reverse(q.size)));
         c.first().copied()
     }
 }
@@ -396,7 +475,9 @@ pub fn parse_tree(entries: &[TreeEntry]) -> RepoFiles {
             mmproj.push((e.path.clone(), e.size));
             continue;
         }
-        if lower.contains("imatrix") || lower.starts_with("mtp-") {
+        // Helpers that sit next to the model: importance matrix, multi-token-prediction and
+        // speculative-decoding drafts (unsloth "dspark", "MTP").
+        if ["imatrix", "mtp-", "dspark", "draft", "eagle"].iter().any(|k| lower.contains(k)) {
             continue;
         }
         // Subfolders hold split quants ("UD-Q4_K_M/", "BF16/"); others ("MTP/", "dspark/") are helpers.
@@ -456,13 +537,26 @@ mod tests {
     }
 
     #[test]
-    fn official_rule_on_real_listing() {
+    fn kinds_on_real_listing() {
         let l = list("hf-list-unsloth.json");
         let qwen = l.iter().find(|e| e.id == "unsloth/Qwen3.8-27B-GGUF").unwrap();
-        assert!(is_official(qwen));
+        assert_eq!(kind_of(qwen), Kind::Quant, "unsloth re-uploads are quants, not official");
         assert_eq!(canonical_key(qwen), "qwen/qwen3.8-27b");
         let drummer = list("hf-list-TheDrummer.json");
-        assert!(drummer.iter().all(|e| !is_official(e)), "TheDrummer uploads are finetunes");
+        assert!(drummer.iter().all(|e| kind_of(e) == Kind::Finetune), "TheDrummer uploads are finetunes");
+        let trending = list("hf-list-trending.json");
+        let lfm = trending.iter().find(|e| e.id == "LiquidAI/LFM3-1.7B-GGUF").unwrap();
+        assert_eq!(kind_of(lfm), Kind::Official, "maker's own account");
+    }
+
+    #[test]
+    fn families() {
+        assert_eq!(family_of("unsloth/gemma-4-E2B-it-GGUF"), Some("gemma"));
+        assert_eq!(family_of("bartowski/deepseek-ai_DeepSeek-R1-Distill-Qwen-7B-GGUF"), Some("deepseek"));
+        assert_eq!(family_of("unsloth/Devstral-Small-2-GGUF"), Some("mistral"));
+        assert_eq!(family_of("nvidia/Llama-3.3-Nemotron-Super-49B-GGUF"), Some("nemotron"));
+        assert_eq!(family_of("unsloth/gpt-oss-20b-GGUF"), Some("gpt-oss"));
+        assert_eq!(family_of("LiquidAI/LFM3-1.7B-GGUF"), None);
     }
 
     #[test]
@@ -474,7 +568,7 @@ mod tests {
         let mut sources = default_sources();
         let r = rank(&all, &sources, RankOptions { official_only: true, show_uncensored: false }, NOW);
         assert!(!r.items.is_empty());
-        assert!(r.items.iter().all(|i| i.official && !i.uncensored));
+        assert!(r.items.iter().all(|i| i.kind != Kind::Finetune && !i.uncensored));
         assert!(r.items.iter().all(|i| i.author != "bartowski" && i.author != "TheDrummer"), "disabled sources");
         assert!(r.items.windows(2).all(|w| w[0].score >= w[1].score));
         // Enable TheDrummer finetunes and show all models
@@ -520,6 +614,7 @@ mod tests {
         let te = |p: &str, s| TreeEntry { kind: "file".into(), path: p.into(), size: s };
         let f = parse_tree(&[
             te("dspark/dspark-DeepSeek-BF16.gguf", 8),
+            te("dspark-DeepSeek-Q8_0.gguf", 2),
             te("MTP/mtp-Qwen-Q4_0.gguf", 1),
             te("UD-IQ1_M/DeepSeek-UD-IQ1_M-00001-of-00002.gguf", 10),
             te("UD-IQ1_M/DeepSeek-UD-IQ1_M-00002-of-00002.gguf", 20),

@@ -56,6 +56,16 @@ impl Hf<'_> {
         self.get_json(&format!("{API}/models?author={author}&filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await
     }
 
+    /// One uploader's GGUF repos matching a search term (family lists).
+    pub async fn by_author_search(&self, author: &str, term: &str, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
+        self.get_json(&format!("{API}/models?author={author}&search={term}&filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await
+    }
+
+    /// Trending GGUF repos from everyone matching a search term.
+    pub async fn trending_search(&self, term: &str, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
+        self.get_json(&format!("{API}/models?search={term}&filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await
+    }
+
     /// Trending GGUF repos from everyone (used for the "labs" source).
     pub async fn trending(&self, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
         self.get_json(&format!("{API}/models?filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await

@@ -42,10 +42,13 @@ export interface Template {
   id: string; collection: string; url: string; tier: "low" | "mid" | "high" | null; title: string; parts: string[];
   size: number | null; context: number | null; config: Kcpps; files: [string, string, number | null][];
 }
+export type ModelKindHf = "official" | "quant" | "finetune";
 export interface Ranked {
-  id: string; name: string; author: string; params: string | null; official: boolean; uncensored: boolean;
+  id: string; name: string; author: string; params: string | null; kind: ModelKindHf; official: boolean; family: string | null; uncensored: boolean;
   likes: number; downloads: number; ageDays: number; score: number; source: number; baseModel: string | null; tags: string[];
 }
+export interface SearchHit extends Ranked { typical: [string, number] | null }
+export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[] }
 export interface PopularItem extends Ranked { pick: QuantPick; urls: string[]; mmproj: [string, number] | null }
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
 export interface QuantFile { quant: string; label: string; files: string[]; size: number }
@@ -120,7 +123,7 @@ const mockHardware: HardwareInfo = {
 export const api = {
   hardware: (refresh = false) => call<HardwareInfo>("hardware_info", { refresh }, () => mockHardware),
   settings: () => call<Settings>("get_settings", {}, () => mockSettings),
-  saveSettings: (settings: Settings) => call<Settings>("save_settings", { settings }, () => (mockSettings = settings)),
+  saveSettings: (patch: SettingsPatch) => call<Settings>("save_settings", { patch }, () => (mockSettings = { ...mockSettings, ...patch })),
   paths: () => call<Paths>("app_paths", {}, () => ({ data: "~/KoboldCpp Launcher", models: "~/KoboldCpp Launcher/models", presets: "~/KoboldCpp Launcher/presets" })),
   commandLine: (config: Kcpps) => call<string>("command_line", { config }),
 
@@ -157,9 +160,10 @@ export const api = {
   templates: () => call<Template[]>("templates", {}, () => import("./mock").then((m) => m.mockTemplates())),
   fits: (items: [number, number][], machine: Machine) =>
     call<Fit[]>("fits", { items, vram: machine.vram, ram: machine.ram, unified: machine.unified }, () => import("./mock").then((m) => items.map(([s, c]) => m.mockFit(s, c, machine)))),
-  popular: (options: { officialOnly: boolean; showUncensored: boolean }, machine: Machine) =>
-    call<PopularResult>("popular_models", { options, machine }, () => import("./mock").then((m) => m.mockPopular(options, machine, mockSettings.sources))),
-  search: (query: string) => call<Ranked[]>("search_models", { query }, () => import("./mock").then((m) => m.mockSearch(query))),
+  popular: (options: { officialOnly: boolean; showUncensored: boolean }, machine: Machine, family: string | null) =>
+    call<PopularResult>("popular_models", { options, machine, family }, () => import("./mock").then((m) => m.mockPopular(options, machine, mockSettings.sources, family))),
+  families: () => call<[string, string][]>("model_families", {}, () => [["gemma", "Gemma"], ["qwen", "Qwen"], ["glm", "GLM"], ["deepseek", "DeepSeek"], ["mistral", "Mistral"], ["llama", "Llama"], ["gpt-oss", "GPT-oss"], ["nemotron", "Nemotron"]]),
+  search: (query: string) => call<SearchHit[]>("search_models", { query }, () => import("./mock").then((m) => m.mockSearch(query))),
   repoFiles: (repo: string) => call<RepoFiles>("repo_files", { repo }, () => import("./mock").then((m) => m.mockRepoFiles(repo))),
   downloadFiles: (id: string, files: { url: string; size: number | null }[]) =>
     call<[string, string][]>("download_files", { id, files }, async () => {

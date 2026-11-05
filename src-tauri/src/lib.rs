@@ -46,6 +46,7 @@ pub fn run() {
             fits,
             popular_models,
             search_models,
+            model_families,
             repo_files,
             download_files,
             cancel_download,

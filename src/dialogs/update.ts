@@ -1,6 +1,6 @@
 // KoboldCpp install/update: top-bar button and dialog, backed by GitHub releases.
 
-import { api, fmtBytes, on, type Progress } from "../api";
+import { api, fmtBytes, inTauri, on, type Progress, type SettingsPatch } from "../api";
 import { $, h, toggle, toast } from "../dom";
 import { S, render } from "../state";
 
@@ -36,6 +36,13 @@ export async function refreshBinary(check: boolean) {
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+}
+
+/** Show a file in Finder / Explorer. */
+export async function reveal(path: string) {
+  if (!inTauri) return toast(path);
+  const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+  revealItemInDir(path).catch((e) => toast(String(e)));
 }
 
 export function openUpdate() {
@@ -86,9 +93,9 @@ export function openUpdate() {
     draw();
   };
 
-  const saveSetting = async (patch: Partial<NonNullable<typeof S.settings>>) => {
+  const saveSetting = async (patch: SettingsPatch) => {
     if (!S.settings) return;
-    S.settings = await api.saveSettings({ ...S.settings, ...patch });
+    S.settings = await api.saveSettings(patch);
   };
 
   function draw() {
@@ -127,6 +134,11 @@ export function openUpdate() {
         ? `${S.running} stops while updating and starts again afterwards. Your models, presets and sources stay as they are.`
         : "Your models, presets and sources stay as they are."));
     }
+    const path = S.binary?.installed?.path;
+    if (installed() && path)
+      body.append(h("div", { class: "notes", style: "display:flex;gap:10px;align-items:center" },
+        h("div", { style: "flex:1;min-width:0" }, h("strong", {}, "Installed at"), h("div", { class: "mono", style: "font-size:12px;overflow-wrap:anywhere" }, path)),
+        h("button", { onclick: () => reveal(path) }, "Show in Finder")));
     if (error || S.updateError) body.append(h("p", { class: "err" }, error || S.updateError));
 
     if (S.settings)

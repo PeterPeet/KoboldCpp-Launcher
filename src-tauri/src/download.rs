@@ -80,6 +80,7 @@ pub fn client() -> reqwest::Client {
     b.build().expect("http client builds")
 }
 
+#[derive(Clone, Copy)]
 pub struct Request<'a> {
     pub url: &'a str,
     pub dest: &'a Path,
@@ -167,6 +168,21 @@ pub async fn download(client: &reqwest::Client, req: Request<'_>, cancel: &Cance
     progress(Progress { done, total, speed });
     tokio::fs::rename(&part, dest).await?;
     Ok(dest.to_path_buf())
+}
+
+/// `download` with up to 4 attempts for network trouble (each resumes where the last stopped).
+pub async fn download_retry(client: &reqwest::Client, req: Request<'_>, cancel: &Cancel, mut progress: impl FnMut(Progress)) -> Result<PathBuf, DownloadError> {
+    let mut attempt = 0u32;
+    loop {
+        match download(client, req, cancel, &mut progress).await {
+            Err(e @ (DownloadError::Http(_) | DownloadError::Incomplete { .. } | DownloadError::Status(500..))) if attempt < 3 && !cancel.is_cancelled() => {
+                attempt += 1;
+                eprintln!("download of {} interrupted ({e}), retry {attempt}", req.url);
+                tokio::time::sleep(Duration::from_secs(2u64 << attempt)).await;
+            }
+            other => return other,
+        }
+    }
 }
 
 /// URLs of all parts of a split model, given the first part's URL (`-00001-of-00003.gguf`).
@@ -274,6 +290,16 @@ mod tests {
         assert!(reports >= 1);
         // Already there: no request needed.
         download(&c, Request { url: "http://127.0.0.1:9/nothing", dest: &dest, size: Some(body.len() as u64), sha256: None }, &Cancel::default(), |_| {}).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retry_resumes_automatically() {
+        let body: Vec<u8> = (0..200_000u32).map(|i| (i % 13) as u8).collect();
+        let url = serve(body.clone(), Some(50_000));
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("r.bin");
+        download_retry(&client(), Request { url: &url, dest: &dest, size: Some(body.len() as u64), sha256: None }, &Cancel::default(), |_| {}).await.unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), body);
     }
 
     #[tokio::test]

@@ -48,18 +48,31 @@ async function loadTemplateFits() {
   render();
 }
 
+let families: [string, string][] = [];
+async function loadFamilies() {
+  try { families = await api.families(); } catch { families = []; }
+  render();
+}
+
 async function loadPopular() {
-  const key = JSON.stringify([S.official, S.uncensored, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
+  const key = JSON.stringify([S.family, S.official, S.uncensored, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
   if (key === S.popularKey) return;
   S.popularKey = key;
   S.popular = null;
   try {
-    S.popular = await api.popular({ officialOnly: S.official, showUncensored: S.uncensored }, machine());
+    S.popular = await api.popular({ officialOnly: S.official, showUncensored: S.uncensored }, machine(), S.family);
     S.popularError = "";
   } catch (e) {
     S.popularError = String(e);
   }
   if (S.popularKey === key) render();
+}
+
+/** "Official" (maker's own account), "Quant by X", or "Finetune". */
+export function kindPill(m: { kind: string; author: string }) {
+  if (m.kind === "official") return h("span", { class: "pill p-ok", title: "Uploaded by the model maker" }, "Official");
+  if (m.kind === "quant") return h("span", { class: "pill p-mute", title: "Unchanged model, quantized by someone else" }, `Quant by ${m.author}`);
+  return h("span", { class: "pill p-acc", title: "A changed version of a model" }, "Finetune");
 }
 
 /* ---------- actions ---------- */
@@ -141,22 +154,28 @@ function templatesSection() {
 
 function popularSection() {
   loadPopular();
+  if (!families.length) loadFamilies();
   const seg = h("div", { class: "seg", role: "group", "aria-label": "Which models" },
-    ...([["Official releases", true], ["All models", false]] as const).map(([l, v]) =>
+    ...([["Original models", true], ["With finetunes", false]] as const).map(([l, v]) =>
       h("button", { "aria-pressed": String(S.official === v), onclick: () => { S.official = v; render(); } }, l)));
+  const famRow = h("div", { class: "famrow", role: "tablist", "aria-label": "Model family" },
+    ...([[null, "Top"], ...families] as [string | null, string][]).map(([id, label]) =>
+      h("button", { role: "tab", "aria-selected": String(S.family === id), onclick: () => { S.family = id; render(); } }, label)));
   const head = h("div", { class: "sec-head" },
     h("div", {},
       h("h2", {}, "Choose from popular models yourself"),
-      h("p", {}, "Ranked by downloads, likes and age from your sources. The best quality that fits is picked for you.")),
+      h("p", {}, S.family === null
+        ? "The best model of each family that fits this PC. Pick a family to see its whole list."
+        : "Ranked by downloads, likes and age from your sources. The best quality that fits is picked for you.")),
     h("div", { class: "controls" }, seg, toggle("unc", S.uncensored, (v) => { S.uncensored = v; render(); }, "Show uncensored finetunes")));
-  const out: HTMLElement[] = [head];
+  const out: HTMLElement[] = [head, famRow];
   const pop = S.popular;
   if (!pop) {
     out.push(h("div", { class: "list" }, h("div", { class: "empty" }, S.popularError ? `Could not reach Hugging Face: ${S.popularError}` : "Loading popular models…")));
     return out;
   }
   const list = h("div", { class: "list" });
-  if (!pop.items.length) list.append(h("div", { class: "empty" }, "Nothing matches. Turn on more sources or switch to All models."));
+  if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your sources." : "Nothing matches. Turn on more sources or include finetunes."));
   for (const m of pop.items) {
     const key = "m:" + m.id;
     const ctl = goControl(key, m.name, () => startPopular(m));
@@ -164,7 +183,8 @@ function popularSection() {
       h("div", { class: "mono-badge fam-" + famClass(m) }, m.name.slice(0, 2)),
       h("div", { class: "main" },
         h("div", { class: "name" }, m.name,
-          m.official ? h("span", { class: "pill p-mute" }, "Official") : h("span", { class: "pill p-acc" }, "Finetune"),
+          S.family === null && m.family ? h("span", { class: "pill p-fam" }, families.find((f) => f[0] === m.family)?.[1] ?? m.family) : null,
+          kindPill(m),
           m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
           ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
           m.mmproj ? h("span", { class: "pill p-mute" }, "Sees images") : null),
@@ -177,7 +197,7 @@ function popularSection() {
   if (pop.errors.length) out.push(h("p", { class: "note", style: "margin:-10px 0 0" }, `Not reachable: ${pop.errors.join("; ")}`));
   if (!S.official && !S.sources.some((s) => s.on && s.comps && (s.comps.finetune || s.comps.unc)))
     out.push(h("p", { class: "note", style: "margin:-10px 0 0" },
-      "Your sources only allow official models, so All models shows the same list. ",
+      "Your sources only allow original models, so finetunes don't appear. ",
       h("button", { class: "linkbtn", onclick: openSources }, "Add bartowski or TheDrummer"), " to see finetunes."));
   const hidden = [pop.tooBig ? `${pop.tooBig} too big for this PC, hidden` : "", pop.dupes ? `${pop.dupes} duplicate upload${pop.dupes > 1 ? "s" : ""} merged` : ""].filter(Boolean).join(" · ");
   out.push(h("div", { class: "foot" },

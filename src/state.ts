@@ -7,7 +7,10 @@ export type Source = ApiSource;
 
 export const S = {
   useGpu: [] as boolean[],
+  /** Popular list: true = original models only (official + quants), false = with finetunes. */
   official: true,
+  /** Family filter on the start screen; null = "Top" (best of each family). */
+  family: null as string | null,
   uncensored: false,
   showAllTiers: false,
   running: null as string | null,

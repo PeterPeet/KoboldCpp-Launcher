@@ -106,7 +106,7 @@ pub async fn install(client: &reqwest::Client, release: &Release, asset: &str, b
     let a = release.assets.iter().find(|a| a.name == asset).ok_or(DownloadError::Status(404))?;
     let dest = bin_dir.join(&release.tag_name).join(&a.name);
     let sha = a.digest.as_deref().and_then(|d| d.strip_prefix("sha256:"));
-    let path = download::download(client, Request { url: &a.browser_download_url, dest: &dest, size: Some(a.size), sha256: sha }, cancel, progress).await?;
+    let path = download::download_retry(client, Request { url: &a.browser_download_url, dest: &dest, size: Some(a.size), sha256: sha }, cancel, progress).await?;
     make_executable(&path)?;
     Ok(InstalledBinary { path, version: Some(release.tag_name.clone()), asset: Some(a.name.clone()) })
 }
@@ -125,6 +125,28 @@ pub fn make_executable(path: &Path) -> std::io::Result<()> {
         let _ = std::process::Command::new("xattr").args(["-d", "com.apple.quarantine"]).arg(path).output();
     }
     Ok(())
+}
+
+/// Newest KoboldCpp already in `bin_dir/<tag>/`, if any.
+pub fn find_installed(bin_dir: &Path) -> Option<InstalledBinary> {
+    let mut found: Vec<InstalledBinary> = std::fs::read_dir(bin_dir)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|dir| {
+            let tag = dir.file_name().to_string_lossy().into_owned();
+            let file = std::fs::read_dir(dir.path()).ok()?.flatten().map(|f| f.path()).find(|p| {
+                let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                n.starts_with("koboldcpp") && !n.ends_with(".part") && p.is_file()
+            })?;
+            Some(InstalledBinary { asset: file.file_name().map(|n| n.to_string_lossy().into_owned()), path: file, version: Some(tag) })
+        })
+        .collect();
+    found.sort_by(|a, b| {
+        let (x, y) = (a.version.as_deref().unwrap_or(""), b.version.as_deref().unwrap_or(""));
+        if is_newer(x, y) { std::cmp::Ordering::Greater } else if is_newer(y, x) { std::cmp::Ordering::Less } else { std::cmp::Ordering::Equal }
+    });
+    found.pop()
 }
 
 /// Remove older installed versions, keeping `keep` (the folder of the current binary).
@@ -176,6 +198,20 @@ mod tests {
         assert!(mac.size > 10_000_000);
         let i = info(r, Some("koboldcpp-mac-arm64"));
         assert_eq!(i.size, Some(mac.size));
+    }
+
+    #[test]
+    fn finds_installed_binary() {
+        let d = tempfile::tempdir().unwrap();
+        for tag in ["v1.123.1", "v1.124.2"] {
+            std::fs::create_dir_all(d.path().join(tag)).unwrap();
+            std::fs::write(d.path().join(tag).join("koboldcpp-mac-arm64"), b"x").unwrap();
+        }
+        std::fs::create_dir_all(d.path().join("v1.125.0")).unwrap();
+        std::fs::write(d.path().join("v1.125.0/koboldcpp-mac-arm64.part"), b"x").unwrap();
+        let b = find_installed(d.path()).unwrap();
+        assert_eq!(b.version.as_deref(), Some("v1.124.2"));
+        assert!(b.path.ends_with("v1.124.2/koboldcpp-mac-arm64"));
     }
 
     #[test]
