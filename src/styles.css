@@ -274,3 +274,59 @@ input[type=range]{width:100%;accent-color:var(--accent)}
   .src .ord{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- Esobold mode ----------
+   Esolite's own colors (its built-in fallback): topmenu #002b36, topbtn/popups/input #244752,
+   bg_outer #647476, accent_bg_highlight #4b7b8a, fg #a0bebe, fg_highlight #82a1bc,
+   border #7c8e8e, pending_text #90f7fa. Applied over the chosen theme while the mode is on. */
+:root[data-theme="eso"]{
+  --bg:#3f565a; --win:#244752; --panel:#1c3a42; --line:#3e6470; --line-2:#7c8e8e;
+  --fg:#e2eeee; --fg-2:#a0bebe; --fg-3:#88a3a3;
+  --accent:#002b36; --accent-fg:#ffffff; --accent-soft:#244752; --accent-text:#9fd3e4;
+  --ok:#5fd9a8; --ok-soft:#173f38; --warn:#f1dd21; --warn-soft:#3b3a1a; --bad:#ef8a80; --bad-soft:#4a2626;
+  --g0:#244752; --g0t:#e2eeee; --g1:#1f5a4f; --g1t:#e2eeee;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.45); color-scheme:dark}
+:root[data-theme="eso"] .bar{background:#002b36;border-bottom-color:#244752}
+:root[data-theme="eso"] .card,:root[data-theme="eso"] .tile,:root[data-theme="eso"] .list,:root[data-theme="eso"] .grp,:root[data-theme="eso"] .dialog{background:#244752}
+:root[data-theme="eso"] .app>.screen{background:#3f565a}
+:root[data-theme="eso"] button{background:#244752;border-color:#7c8e8e;color:#e2eeee}
+:root[data-theme="eso"] button:hover{background:#4b7b8a}
+:root[data-theme="eso"] button.primary{background:#002b36;border-color:#82a1bc;color:#fff}
+:root[data-theme="eso"] button.primary:hover{background:#4b7b8a;filter:none}
+:root[data-theme="eso"] button.ghost,:root[data-theme="eso"] button.linkbtn{background:transparent;border-color:transparent}
+:root[data-theme="eso"] button.go-start{background:#1f5a4f;border-color:#5fd9a8;color:#e2eeee}
+:root[data-theme="eso"] input:not([type=checkbox]):not([type=range]),:root[data-theme="eso"] select{background:#244752;color:#e2eeee;border-color:#7c8e8e}
+:root[data-theme="eso"] .tabs button,:root[data-theme="eso"] .snav button,:root[data-theme="eso"] .seg button{background:transparent;border-color:transparent}
+:root[data-theme="eso"] .tabs button[aria-selected="true"]{color:#90f7fa;border-bottom-color:#90f7fa}
+:root[data-theme="eso"] .snav button[aria-current="true"]{background:#002b36;color:#fff}
+:root[data-theme="eso"] .famrow button,:root[data-theme="eso"] .pillbtn{background:#244752;border-color:#7c8e8e;color:#e2eeee}
+:root[data-theme="eso"] .famrow button[aria-selected="true"]{background:#4b7b8a;border-color:#90f7fa;color:#fff}
+:root[data-theme="eso"] .theme{background:#244752}
+:root[data-theme="eso"] .nav a{color:#a0bebe}
+:root[data-theme="eso"] .nav a[aria-current="page"]{background:#244752;color:#fff}
+
+/* The way to Esobold: a small warning pill at the end of the Advanced menu. */
+.snav button.eso-nav{margin-top:12px;justify-self:start;padding:5px 12px;border:1px solid color-mix(in srgb,var(--warn) 55%,transparent)!important;border-radius:20px;background:var(--warn-soft)!important;color:var(--warn)!important;font-size:13px}
+.snav button.eso-nav[aria-current="true"]{box-shadow:0 0 0 1px var(--warn)}
+:root[data-eso="on"] .snav button.eso-nav{border-color:#90f7fa!important;background:#002b36!important;color:#90f7fa!important}
+.eso-page{display:grid;gap:14px;max-width:720px}
+.eso-warn{border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:var(--warn-soft);border-radius:12px;padding:2px 16px;color:var(--fg)}
+.eso-label{font-size:14px;color:var(--fg-2)}
+#esoPhrase{max-width:420px}
+#esoPhrase.ok{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok)}
+.eso-switch{justify-self:start;gap:10px;font-weight:600}
+.switch input:disabled{opacity:.4;cursor:not-allowed}
+
+/* Entering Esobold: a short flicker, like stepping somewhere you shouldn't be. */
+@keyframes esoEnter{
+  0%{filter:none;transform:none}
+  12%{filter:hue-rotate(140deg) contrast(1.8) brightness(1.4);transform:translateX(-4px)}
+  20%{filter:invert(1) hue-rotate(180deg);transform:translateX(5px) skewX(-2deg)}
+  28%{filter:brightness(.2);transform:none}
+  40%{filter:hue-rotate(90deg) saturate(2);transform:translateX(-2px)}
+  55%{filter:brightness(.6) contrast(1.3)}
+  100%{filter:none;transform:none}}
+@keyframes esoLeave{0%{filter:brightness(.3) saturate(0)}100%{filter:none}}
+html.eso-enter body{animation:esoEnter .85s ease-out}
+html.eso-leave body{animation:esoLeave .6s ease-out}
+@media (prefers-reduced-motion:reduce){html.eso-enter body,html.eso-leave body{animation:none}}

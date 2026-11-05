@@ -18,6 +18,14 @@ impl Dirs {
     }
     pub fn settings_file(&self) -> PathBuf { self.root.join("settings.json") }
     pub fn bin(&self) -> PathBuf { self.root.join("bin") }
+    /// Esobold lives in its own folder, so both programs can stay installed.
+    pub fn bin_esobold(&self) -> PathBuf { self.root.join("bin-esobold") }
+    pub fn bin_of(&self, flavor: crate::binary::Flavor) -> PathBuf {
+        match flavor {
+            crate::binary::Flavor::KoboldCpp => self.bin(),
+            crate::binary::Flavor::Esobold => self.bin_esobold(),
+        }
+    }
     pub fn default_models(&self) -> PathBuf { self.root.join("models") }
     pub fn presets(&self) -> PathBuf { self.root.join("presets") }
     pub fn runs(&self) -> PathBuf { self.root.join("runs") }
@@ -70,6 +78,10 @@ impl From<FolderRepr> for LibraryFolder {
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub binary: Option<InstalledBinary>,
+    /// Esobold mode (Advanced setup): run Esobold instead of KoboldCpp.
+    pub esobold: bool,
+    /// The installed Esobold (kept while in KoboldCpp mode, and the other way round).
+    pub esobold_binary: Option<InstalledBinary>,
     pub check_updates_on_start: bool,
     pub include_prereleases: bool,
     /// Where downloads go; `None` = app data `models/`.
@@ -91,6 +103,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             binary: None,
+            esobold: false,
+            esobold_binary: None,
             check_updates_on_start: true,
             include_prereleases: false,
             models_dir: None,
@@ -104,6 +118,17 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn flavor(&self) -> crate::binary::Flavor {
+        crate::binary::Flavor::of(self.esobold)
+    }
+    /// The program for the current mode (KoboldCpp or Esobold).
+    pub fn active_binary(&self) -> Option<&InstalledBinary> {
+        if self.esobold { self.esobold_binary.as_ref() } else { self.binary.as_ref() }
+    }
+    pub fn set_active_binary(&mut self, b: Option<InstalledBinary>) {
+        if self.esobold { self.esobold_binary = b } else { self.binary = b }
+    }
+
     pub fn load(path: &Path) -> Self {
         let mut s: Self = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         s.sources = crate::hf::migrate_sources(std::mem::take(&mut s.sources));

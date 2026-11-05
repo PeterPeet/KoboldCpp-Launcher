@@ -11,8 +11,15 @@ export function getTheme(): Theme {
   }
 }
 
+/** Esobold mode wears Esolite's colors over whatever the user chose; leaving it restores that. */
+let esoOn = false;
+export function setEsoTheme(on: boolean) {
+  esoOn = on;
+  applyTheme();
+}
+
 export function applyTheme(t: Theme = getTheme()) {
-  document.documentElement.dataset.theme = t;
+  document.documentElement.dataset.theme = esoOn ? "eso" : t;
 }
 
 export function setTheme(t: Theme) {

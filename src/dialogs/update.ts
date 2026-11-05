@@ -2,9 +2,11 @@
 
 import { api, fmtBytes, inTauri, on, type Progress, type SettingsPatch } from "../api";
 import { $, h, toggle, toast } from "../dom";
+import { progName, repoUrl } from "../flavor";
 import { S, render } from "../state";
 
-export const REPO = "https://github.com/LostRuins/koboldcpp";
+/** GitHub repository of the program in the current mode (KoboldCpp or Esobold). */
+export const REPO = () => repoUrl();
 
 const installed = () => S.binary?.installed && S.binary.present;
 
@@ -14,13 +16,13 @@ export function drawUpdBtn() {
   $("#verLabel")!.textContent = installed() ? ver ?? "custom build" : "not installed";
   if (!installed()) {
     b.className = "upd new";
-    b.textContent = S.binary?.asset ? "Install KoboldCpp" : "KoboldCpp";
+    b.textContent = S.binary?.asset ? `Install ${progName()}` : `${progName()}`;
   } else if (S.update?.updateAvailable && S.update.latest) {
     b.className = "upd new";
-    b.textContent = `KoboldCpp: Update to ${S.update.latest.tag}`;
+    b.textContent = `${progName()}: Update to ${S.update.latest.tag}`;
   } else {
     b.className = "upd ok";
-    b.textContent = S.update ? "KoboldCpp: Up to date" : "KoboldCpp: Check for updates";
+    b.textContent = S.update ? `${progName()}: Up to date` : `${progName()}: Check for updates`;
   }
   drawSelfUpd();
 }
@@ -97,7 +99,7 @@ export function openUpdate() {
       root.replaceChildren();
       drawUpdBtn();
       render();
-      toast(`KoboldCpp ${b.version ?? ""} installed` + (S.running ? `. ${S.running} is running again.` : ""));
+      toast(`${progName()} ${b.version ?? ""} installed` + (S.running ? `. ${S.running} is running again.` : ""));
     } catch (e) {
       working = false;
       error = String(e);
@@ -130,15 +132,15 @@ export function openUpdate() {
     const link = (href: string, text: string, style = "color:var(--accent-text)") =>
       /^https:\/\//i.test(href) ? h("a", { href, target: "_blank", rel: "noopener", style }, text) : h("span", {}, text);
     const title = !installed()
-      ? "Install KoboldCpp"
-      : has && latest ? `KoboldCpp ${latest.tag} is available` : "You're up to date";
+      ? `Install ${progName()}`
+      : has && latest ? `${progName()} ${latest.tag} is available` : "You're up to date";
     const sub = !installed()
       ? S.binary?.asset
-        ? `The launcher downloads KoboldCpp ${latest?.tag ?? ""} (${S.binary.asset}${latest?.size ? ", " + fmtBytes(latest.size) : ""}) from GitHub and checks it.`
-        : "KoboldCpp has no official build for this computer. Pick a koboldcpp file you built yourself."
+        ? `The launcher downloads ${progName()} ${latest?.tag ?? ""} (${S.binary.asset}${latest?.size ? ", " + fmtBytes(latest.size) : ""}) from GitHub and checks it.`
+        : `${progName()} has no official build for this computer. Pick a koboldcpp file you built yourself.`
       : has && latest
         ? `You have ${S.binary?.installed?.version ?? "a custom build"}. Released on GitHub on ${fmtDate(latest.publishedAt)}.`
-        : `KoboldCpp ${S.binary?.installed?.version ?? ""} is the newest release.`;
+        : `${progName()} ${S.binary?.installed?.version ?? ""} is the newest release.`;
 
     const body = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "updTitle", style: "width:min(600px,100%)", "data-busy": working ? "1" : "" });
     body.append(h("div", { style: "display:flex;justify-content:space-between;align-items:flex-start;gap:12px" },
@@ -175,7 +177,7 @@ export function openUpdate() {
     const btns = h("div", { class: "btns" });
     if (!working) {
       if (has && S.binary?.asset && latest)
-        btns.append(link(`${REPO}/releases`, "View on GitHub", "align-self:center;font-size:13px;color:var(--accent-text);margin-right:auto"),
+        btns.append(link(`${REPO()}/releases`, "View on GitHub", "align-self:center;font-size:13px;color:var(--accent-text);margin-right:auto"),
           ...(installed() ? [h("button", { onclick: close }, "Later")] : []),
           h("button", { class: "primary", onclick: run }, installed() ? "Update now" : "Download and install"));
       else

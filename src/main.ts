@@ -12,6 +12,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
 import { openSources } from "./dialogs/sources";
 import { api, fixtureMode, inTauri } from "./api";
+import { applyFlavor, progName } from "./flavor";
 import { drawUpdBtn, openUpdate, refreshBinary, refreshSelf } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
 import { initDownloads } from "./downloads";
@@ -86,6 +87,7 @@ async function init() {
   } catch {
     /* defaults */
   }
+  applyFlavor();
   api.hardware().then((hw) => {
     S.hw = hw;
     S.useGpu = hw.gpus.map(() => true);
@@ -93,8 +95,8 @@ async function init() {
   }, (e) => toast(`Hardware detection failed: ${e}`));
   if (S.settings?.checkUpdatesOnStart) refreshSelf();
   await refreshBinary(!!S.settings?.checkUpdatesOnStart);
-  if (S.binary && !S.binary.present) toast("KoboldCpp is not installed yet. Use the button at the top to install it.");
-  else if (S.update?.updateAvailable && S.update.latest) toast(`KoboldCpp ${S.update.latest.tag} is available. Use the button at the top to update.`);
+  if (S.binary && !S.binary.present) toast(`${progName()} is not installed yet. Use the button at the top to install it.`);
+  else if (S.update?.updateAvailable && S.update.latest) toast(`${progName()} ${S.update.latest.tag} is available. Use the button at the top to update.`);
   render();
 }
 init();

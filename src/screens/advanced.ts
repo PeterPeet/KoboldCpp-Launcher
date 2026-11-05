@@ -2,9 +2,10 @@
 // The command line below is generated from the same config by the Rust side.
 
 import { api, fmtBytes, inTauri, type Gpu, type Kcpps, type LocalModel, type PresetInfo } from "../api";
-import { $, h, select, toggle, toast, type Kid } from "../dom";
+import { $, checkbox, h, select, toggle, toast, type Kid } from "../dom";
 import { isActive, launch, stop } from "../server";
-import { reveal } from "../dialogs/update";
+import { refreshBinary, reveal } from "../dialogs/update";
+import { MANTRA, applyFlavor, enterAnimation, eso, mantraOk, progName } from "../flavor";
 import { getTheme, setTheme, type Theme } from "../theme";
 import { S, render } from "../state";
 
@@ -22,7 +23,7 @@ const ICONS: Record<string, string> = {
 const PAGES: [string, string][] = [
   ["presets", "KoboldCpp Presets"], ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"],
   ["images", "Images"], ["voice", "Voice and audio"], ["network", "Network"],
-  ["appearance", "Launcher Appearance"], ["logs", "Logs"],
+  ["appearance", "Launcher Appearance"], ["logs", "Logs"], ["esobold", "Esobold"],
 ];
 
 /* ---------- config state ---------- */
@@ -375,6 +376,51 @@ function logsPage(pane: HTMLElement) {
 
 /* ---------- appearance ---------- */
 
+/* ---------- Esobold mode ---------- */
+
+let esoPhrase = "";
+let esoBusy = false;
+
+function esoboldPage(pane: HTMLElement) {
+  const on = eso();
+  const sw = checkbox("esoSwitch", on, async (v) => {
+    if (esoBusy) return;
+    esoBusy = true;
+    try {
+      S.settings = await api.setEsobold(v);
+      enterAnimation(v);
+      applyFlavor();
+      esoPhrase = "";
+      toast(v ? "Esobold mode. Welcome to the other side." : "Back to KoboldCpp");
+      await refreshBinary(true);
+    } catch (e) {
+      sw.checked = !v;
+      toast(String(e));
+    } finally {
+      esoBusy = false;
+      render();
+    }
+  }) as HTMLInputElement;
+  // Switching on needs the phrase; switching back never does.
+  sw.disabled = !on && !mantraOk(esoPhrase);
+  const input = h("input", { type: "text", id: "esoPhrase", value: esoPhrase, placeholder: MANTRA, autocomplete: "off", spellcheck: "false", "aria-label": "Type the phrase to unlock the switch" }) as HTMLInputElement;
+  input.addEventListener("input", () => {
+    esoPhrase = input.value;
+    sw.disabled = !on && !mantraOk(esoPhrase);
+    input.classList.toggle("ok", mantraOk(esoPhrase));
+  });
+  input.classList.toggle("ok", mantraOk(esoPhrase));
+  pane.append(h("div", { class: "eso-page" },
+    title("Esobold ⚠️"),
+    h("div", { class: "eso-warn" },
+      h("p", {}, "Esobold and Esolite are community-made forks of KoboldCpp and Lite. They are further downstream and have features that KoboldCpp and Lite don't have, but they may be less stable or less safe."),
+      h("p", {}, "Only use this option if you know what you are doing. Switching it on puts KoboldCpp Peter's Launcher into Esobold mode: it downloads and runs Esobold from github.com/esolithe/esobold instead of KoboldCpp and opens Esolite instead of Lite. Your KoboldCpp stays installed, and switching back uses it again.")),
+    on ? null : h("label", { for: "esoPhrase", class: "eso-label" }, "Please type this in the field to unlock the switch: ", h("b", {}, MANTRA)),
+    on ? null : input,
+    h("label", { class: "switch eso-switch", for: "esoSwitch" }, sw, on ? "Esobold mode is on" : "Esobold mode"),
+    h("p", { class: "note" }, "Advanced setup shows KoboldCpp's options. Esobold accepts them too, but its own extra options aren't offered here yet.")));
+}
+
 function appearancePage(pane: HTMLElement) {
   const cur = getTheme();
   // Small picture of each scheme: top bar + window, in its own colors.
@@ -399,14 +445,17 @@ export function renderAdvanced() {
   const A = S.adv;
   const root = h("div", { class: "adv" });
   const nav = h("nav", { class: "snav", "aria-label": "Settings" },
-    ...PAGES.map(([k, l]) => h("button", { "aria-current": String(A.page === k), onclick: () => { A.page = k; render(); } }, icon(k), l)));
+    ...PAGES.map(([k, l]) => k === "esobold"
+      // The way to Esobold: a small warning pill, set apart from the settings pages.
+      ? h("button", { class: "eso-nav", "aria-current": String(A.page === k), onclick: () => { A.page = k; render(); } }, h("span", { "aria-hidden": "true" }, "⚠️"), l)
+      : h("button", { "aria-current": String(A.page === k), onclick: () => { A.page = k; render(); } }, icon(k), k === "presets" ? `${progName()} Presets` : l)));
   root.append(h("aside", { class: "side" }, nav));
   const pane = h("section", { class: "pane" });
   root.append(pane);
 
-  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
+  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage, esobold: esoboldPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
   // The log page is a viewer: no command line or start buttons below it.
-  if (A.page === "logs" || A.page === "appearance") return root;
+  if (A.page === "logs" || A.page === "appearance" || A.page === "esobold") return root;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(cli); toast("Command copied"); }

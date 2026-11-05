@@ -27,6 +27,8 @@ export interface UpdateInfo { current: string | null; latest: ReleaseInfo | null
 export interface Progress { done: number; total: number | null; speed: number }
 export interface Settings {
   binary: InstalledBinary | null; checkUpdatesOnStart: boolean; includePrereleases: boolean;
+  /** Esobold mode (Advanced setup › Esobold) and its own installed program. */
+  esobold: boolean; esoboldBinary: InstalledBinary | null;
   modelsDir: string | null; libraryFolders: LibraryFolder[]; sources: Source[];
 }
 export interface Paths { data: string; models: string; presets: string; logs: string }
@@ -148,6 +150,7 @@ const mockListeners: { event: string; cb: (p: unknown) => void }[] = [];
 const emitMock = (event: string, payload: unknown) => mockListeners.filter((l) => l.event === event).forEach((l) => l.cb(payload));
 let mockSettings: Settings = {
   binary: { path: "/Applications/koboldcpp", version: "v1.123.1", asset: "koboldcpp-mac-arm64" }, checkUpdatesOnStart: true, includePrereleases: false, modelsDir: null, libraryFolders: [],
+  esobold: false, esoboldBinary: null,
   sources: [
     { id: "kcppt", name: "KoboldCpp templates", builtin: true, desc: "Ready-made setups from hf.co/koboldcpp", on: true, comps: null },
     ...([["google", "Google", "Gemma"], ["Qwen", "Qwen (Alibaba)", "Qwen"], ["zai-org", "Z.ai", "GLM"], ["deepseek-ai", "DeepSeek", "DeepSeek"], ["mistralai", "Mistral AI", "Mistral"], ["meta-llama", "Meta", "Llama"], ["openai", "OpenAI", "GPT-oss"], ["nvidia", "NVIDIA", "Nemotron"]] as const).map(([id, maker, fam]) => (
@@ -200,6 +203,7 @@ export const api = {
       return mockSettings.binary!;
     }),
   cancelInstall: () => call<void>("cancel_binary_install", {}, () => {}),
+  setEsobold: (on: boolean) => call<Settings>("set_esobold", { on }, () => (mockSettings = { ...mockSettings, esobold: on })),
   setBinaryPath: (path: string) => call<InstalledBinary>("set_binary_path", { path }),
 
   startServer: (config: Kcpps) =>

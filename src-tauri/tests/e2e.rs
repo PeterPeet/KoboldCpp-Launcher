@@ -25,7 +25,7 @@ async fn real_koboldcpp_starts_and_answers() {
     let hw = tokio::task::spawn_blocking(hardware::detect).await.unwrap();
     println!("hardware: {} GPUs, {} threads, backend {:?}", hw.gpus.len(), hw.default_threads, hw.suggested_backend);
     let asset = binary::asset_name(std::env::consts::OS, std::env::consts::ARCH, Some(&hw)).expect("platform has a build");
-    let releases = binary::fetch_releases(&client).await.unwrap();
+    let releases = binary::fetch_releases(&client, binary::Flavor::KoboldCpp).await.unwrap();
     let rel = binary::latest(&releases, false).unwrap();
     println!("installing {} {asset}", rel.tag_name);
     let mut last = 0;

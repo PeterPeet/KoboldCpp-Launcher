@@ -22,10 +22,10 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let state = AppState::new(dir);
-            // A KoboldCpp left from a session that was killed instead of closed.
-            let bin = state.dirs.bin();
+            // A KoboldCpp or Esobold left from a session that was killed instead of closed.
+            let bins = [state.dirs.bin(), state.dirs.bin_esobold()];
             std::thread::spawn(move || {
-                let n = server::kill_orphans(&bin);
+                let n: usize = bins.iter().map(|b| server::kill_orphans(b)).sum();
                 if n > 0 {
                     applog!("ended {n} leftover KoboldCpp process(es)");
                 }
@@ -48,6 +48,7 @@ pub fn run() {
             launcher_update,
             install_binary,
             cancel_binary_install,
+            set_esobold,
             set_binary_path,
             start_server,
             stop_server,

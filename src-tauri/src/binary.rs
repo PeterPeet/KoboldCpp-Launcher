@@ -6,7 +6,33 @@ use crate::store::InstalledBinary;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const REPO: &str = "LostRuins/koboldcpp";
+/// Which program the launcher runs: the official KoboldCpp, or Esobold, a community fork of it
+/// (with Esolite instead of Lite) that the user can switch to in Advanced setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Flavor {
+    KoboldCpp,
+    Esobold,
+}
+
+impl Flavor {
+    pub fn of(esobold: bool) -> Self {
+        if esobold { Self::Esobold } else { Self::KoboldCpp }
+    }
+    /// GitHub repository with the releases.
+    pub fn repo(self) -> &'static str {
+        match self {
+            Self::KoboldCpp => "LostRuins/koboldcpp",
+            Self::Esobold => "esolithe/esobold",
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::KoboldCpp => "KoboldCpp",
+            Self::Esobold => "Esobold",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
@@ -66,6 +92,26 @@ pub fn asset_name(os: &str, arch: &str, hw: Option<&HardwareInfo>) -> Option<&'s
     }
 }
 
+/// Release asset for this machine and program. Esobold publishes the same file names as
+/// KoboldCpp, plus a ROCm build for Linux, but no "oldpc" build (its nocuda build also runs on
+/// CPUs without AVX2) and nothing for Linux on ARM.
+pub fn asset_for(flavor: Flavor, os: &str, arch: &str, hw: Option<&HardwareInfo>) -> Option<&'static str> {
+    if flavor == Flavor::KoboldCpp {
+        return asset_name(os, arch, hw);
+    }
+    let has = |api: GpuApi| hw.is_some_and(|h| h.gpus.iter().any(|g| g.api == api));
+    let old_cpu = hw.and_then(|h| h.avx2) == Some(false);
+    match (os, arch) {
+        ("macos", "aarch64") => Some("koboldcpp-mac-arm64"),
+        ("windows", "x86_64") if has(GpuApi::Cuda) && !old_cpu => Some("koboldcpp.exe"),
+        ("windows", "x86_64") => Some("koboldcpp-nocuda.exe"),
+        ("linux", "x86_64") if has(GpuApi::Cuda) && !old_cpu => Some("koboldcpp-linux-x64"),
+        ("linux", "x86_64") if has(GpuApi::Rocm) && !old_cpu => Some("koboldcpp-linux-x64-rocm"),
+        ("linux", "x86_64") => Some("koboldcpp-linux-x64-nocuda"),
+        _ => None,
+    }
+}
+
 /// Newest non-draft release; pre-releases only if asked.
 pub fn latest(releases: &[Release], include_prereleases: bool) -> Option<&Release> {
     releases.iter().find(|r| !r.draft && (include_prereleases || !r.prerelease))
@@ -83,15 +129,16 @@ pub fn info(r: &Release, asset: Option<&str>) -> ReleaseInfo {
     }
 }
 
-/// Compare tags like "v1.124.2" numerically; `true` if `candidate` is newer than `current`.
+/// Compare tags like "v1.124.2" (KoboldCpp) or "RMv1.36.3" (Esobold) numerically; `true` if
+/// `candidate` is newer than `current`. Letters before the first digit are ignored.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
-    let nums = |s: &str| -> Vec<u64> { s.trim_start_matches(['v', 'V']).split(['.', '-']).map_while(|p| p.parse().ok()).collect() };
+    let nums = |s: &str| -> Vec<u64> { s.trim_start_matches(|c: char| !c.is_ascii_digit()).split(['.', '-']).map_while(|p| p.parse().ok()).collect() };
     nums(candidate) > nums(current)
 }
 
-pub async fn fetch_releases(client: &reqwest::Client) -> Result<Vec<Release>, DownloadError> {
+pub async fn fetch_releases(client: &reqwest::Client, flavor: Flavor) -> Result<Vec<Release>, DownloadError> {
     let resp = client
-        .get(format!("https://api.github.com/repos/{REPO}/releases?per_page=15"))
+        .get(format!("https://api.github.com/repos/{}/releases?per_page=15", flavor.repo()))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await?;
@@ -213,6 +260,18 @@ mod tests {
         let b = find_installed(d.path()).unwrap();
         assert_eq!(b.version.as_deref(), Some("v1.124.2"));
         assert!(b.path.ends_with("v1.124.2/koboldcpp-mac-arm64"));
+    }
+
+    #[test]
+    fn esobold_assets_and_tags() {
+        let e = Flavor::Esobold;
+        assert_eq!(asset_for(e, "macos", "aarch64", None), Some("koboldcpp-mac-arm64"));
+        assert_eq!(asset_for(e, "windows", "x86_64", Some(&hw(Some(GpuApi::Cuda), Some(false)))), Some("koboldcpp-nocuda.exe"), "no oldpc build");
+        assert_eq!(asset_for(e, "linux", "x86_64", Some(&hw(Some(GpuApi::Rocm), Some(true)))), Some("koboldcpp-linux-x64-rocm"));
+        assert_eq!(asset_for(e, "linux", "aarch64", None), None);
+        assert!(is_newer("RMv1.36.3", "RMv1.35.0"));
+        assert!(!is_newer("RMv1.36.3", "RMv1.36.3"));
+        assert_eq!(e.repo(), "esolithe/esobold");
     }
 
     #[test]

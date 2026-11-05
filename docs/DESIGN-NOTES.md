@@ -110,6 +110,22 @@ Open question: follow KoboldCpp or Esobold releases.
 
 ## Implementation (2026-11-05)
 
+- **Esobold mode** (Advanced setup › Esobold ⚠️):
+  - A warning page; the switch unlocks after typing "I know what I am doing" (case and spaces
+    don't matter). Switching back needs no phrase. Refused while a model runs.
+  - Esobold = `esolithe/esobold` releases (tags like `RMv1.36.3`, same asset names as KoboldCpp
+    plus `koboldcpp-linux-x64-rocm`, no oldpc and no Linux ARM build; SHA-256 digests checked).
+  - Installed in `bin-esobold/` and recorded in `settings.esoboldBinary`, so KoboldCpp and
+    Esobold stay installed side by side; leftover processes are ended for both folders.
+  - The UI follows `flavor.ts`: program name, "Open Esolite", GitHub links, window title,
+    Esobold's green Niko icon (`nikogreen.ico` from the Esobold/KoboldCpp repos, which Esobold's
+    CUDA builds use) and Esolite's teal colors (its built-in fallback: #002b36, #244752,
+    #647476, #a0bebe), over the chosen theme. Entering plays a short flicker.
+  - The architecture check doesn't compare Esobold's version with KoboldCpp's list (unknown
+    architectures show as "unknown", not "won't run").
+  - Not covered: Esobold's extra launch options (Advanced shows KoboldCpp's). The Dock/taskbar
+    icon stays the launcher's own; the in-app logo changes.
+
 - **Security review (Nov 2026)**, summary in `SECURITY.md`:
   - Launch options in `config::safety`: `NEVER` keys are stripped before every start, and
     `UNTRUSTED_ONLY` keys (host, remotetunnel, multiuser, multiplayer, password) are also

@@ -84,6 +84,10 @@ files, and any `.kcpps` or `.kcppt` can be imported.
 Choose Light, or KoboldAI Lite's own default colors, under Advanced setup › Launcher Appearance.
 
 ### And also
+- **Esobold mode** (Advanced setup › Esobold ⚠️): switches the launcher to
+  [Esobold](https://github.com/esolithe/esobold), a community fork of KoboldCpp with Esolite.
+  You unlock it by typing a phrase; it brings its own colors and icon, and KoboldCpp stays
+  installed next to it.
 - **Model Sources:** which Hugging Face accounts feed the lists. The makers are built in; unsloth,
   bartowski, TheDrummer or anyone else can be added. Sources are kept in priority order and can be
   exported and imported as a file.

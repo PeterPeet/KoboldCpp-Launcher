@@ -3,6 +3,7 @@
 import { api, on, type Kcpps, type ServerStatus } from "./api";
 import { h, toast } from "./dom";
 import { S, render } from "./state";
+import { progName } from "./flavor";
 
 export function statusText(s: ServerStatus, label: string | null) {
   const what = label ? ` · ${label}` : "";
@@ -43,7 +44,7 @@ export async function launch(label: string, config: Kcpps) {
     S.running = null;
     const msg = String(e);
     if (msg.includes("not installed")) {
-      toast("Install KoboldCpp first. It only takes a minute.");
+      toast(`Install ${progName()} first. It only takes a minute.`);
       import("./dialogs/update").then((m) => m.openUpdate());
     } else {
       toast(msg);
@@ -102,7 +103,7 @@ export function initServer() {
     if (ev.status) {
       const was = S.server.state;
       S.server = ev.status;
-      if (ev.status.state === "running" && was !== "running") toast(`${S.running ?? "KoboldCpp"} is running on localhost:${ev.status.port}`);
+      if (ev.status.state === "running" && was !== "running") toast(`${S.running ?? progName()} is running on localhost:${ev.status.port}`);
       if (ev.status.state === "failed") toast(ev.status.message.slice(0, 200));
       if (ev.status.state === "stopped" || ev.status.state === "failed") S.running = ev.status.state === "failed" ? S.running : null;
       setStatus();

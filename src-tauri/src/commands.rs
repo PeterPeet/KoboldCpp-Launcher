@@ -27,7 +27,8 @@ pub struct AppState {
     pub server: ServerManager,
     pub http: reqwest::Client,
     pub hardware: Mutex<Option<HardwareInfo>>,
-    pub releases: Mutex<Option<Vec<Release>>>,
+    /// Releases from the last update check, for the program they belong to.
+    pub releases: Mutex<Option<(binary::Flavor, Vec<Release>)>>,
     pub binary_cancel: Mutex<Option<Cancel>>,
     /// Config of the current/last run, to restart after an update.
     pub last_run: Mutex<Option<Kcpps>>,
@@ -43,6 +44,12 @@ impl AppState {
             && let Some(found) = binary::find_installed(&dirs.bin())
         {
             settings.binary = Some(found);
+            let _ = settings.save(&dirs.settings_file());
+        }
+        if settings.esobold_binary.as_ref().is_none_or(|b| !b.path.is_file())
+            && let Some(found) = binary::find_installed(&dirs.bin_esobold())
+        {
+            settings.esobold_binary = Some(found);
             let _ = settings.save(&dirs.settings_file());
         }
         crate::applog::init(&dirs.logs().join("launcher.log"));
@@ -171,11 +178,12 @@ pub struct BinaryStatus {
 #[tauri::command]
 pub async fn binary_status(state: State<'_, AppState>) -> CmdResult<BinaryStatus> {
     let hw = state.hardware().await.ok();
-    let installed = state.settings().binary;
+    let s = state.settings();
+    let installed = s.active_binary().cloned();
     Ok(BinaryStatus {
         present: installed.as_ref().is_some_and(|b| b.path.is_file()),
         installed,
-        asset: binary::asset_name(std::env::consts::OS, std::env::consts::ARCH, hw.as_ref()).map(str::to_string),
+        asset: binary::asset_for(s.flavor(), std::env::consts::OS, std::env::consts::ARCH, hw.as_ref()).map(str::to_string),
     })
 }
 
@@ -189,18 +197,19 @@ pub struct UpdateInfo {
 
 #[tauri::command]
 pub async fn check_update(state: State<'_, AppState>) -> CmdResult<UpdateInfo> {
-    let releases = binary::fetch_releases(&state.http).await.map_err(err)?;
-    let hw = state.hardware().await.ok();
-    let asset = binary::asset_name(std::env::consts::OS, std::env::consts::ARCH, hw.as_ref());
     let s = state.settings();
+    let flavor = s.flavor();
+    let releases = binary::fetch_releases(&state.http, flavor).await.map_err(err)?;
+    let hw = state.hardware().await.ok();
+    let asset = binary::asset_for(flavor, std::env::consts::OS, std::env::consts::ARCH, hw.as_ref());
     let latest = binary::latest(&releases, s.include_prereleases).map(|r| binary::info(r, asset));
-    let current = s.binary.as_ref().and_then(|b| b.version.clone());
+    let current = s.active_binary().and_then(|b| b.version.clone());
     let update_available = match (&latest, &current) {
         (Some(l), Some(c)) => binary::is_newer(&l.tag, c),
-        (Some(_), None) => s.binary.is_none(),
+        (Some(_), None) => s.active_binary().is_none(),
         _ => false,
     };
-    *state.releases.lock().map_err(err)? = Some(releases);
+    *state.releases.lock().map_err(err)? = Some((flavor, releases));
     Ok(UpdateInfo { current, latest, update_available })
 }
 
@@ -241,28 +250,29 @@ pub async fn launcher_update(state: State<'_, AppState>) -> CmdResult<LauncherUp
 /// for the swap and started again with the same settings.
 #[tauri::command]
 pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Option<String>) -> CmdResult<InstalledBinary> {
-    let cached = state.releases.lock().map_err(err)?.clone();
-    let releases = match cached {
-        Some(r) => r,
-        None => binary::fetch_releases(&state.http).await.map_err(err)?,
-    };
     let s = state.settings();
+    let flavor = s.flavor();
+    let cached = state.releases.lock().map_err(err)?.clone().filter(|(f, _)| *f == flavor);
+    let releases = match cached {
+        Some((_, r)) => r,
+        None => binary::fetch_releases(&state.http, flavor).await.map_err(err)?,
+    };
     let release = match &tag {
         Some(t) => releases.iter().find(|r| &r.tag_name == t),
         None => binary::latest(&releases, s.include_prereleases),
     }
-    .ok_or("No matching KoboldCpp release found")?
+    .ok_or_else(|| format!("No matching {} release found", flavor.name()))?
     .clone();
     let hw = state.hardware().await.ok();
-    let asset = binary::asset_name(std::env::consts::OS, std::env::consts::ARCH, hw.as_ref()).ok_or("KoboldCpp has no official build for this platform")?;
+    let asset = binary::asset_for(flavor, std::env::consts::OS, std::env::consts::ARCH, hw.as_ref()).ok_or_else(|| format!("{} has no build for this platform", flavor.name()))?;
     if !release.assets.iter().any(|a| a.name == asset) {
         return Err(format!("Release {} has no {asset} download", release.tag_name));
     }
     let cancel = Cancel::default();
     *state.binary_cancel.lock().map_err(err)? = Some(cancel.clone());
     let app2 = app.clone();
-    crate::applog!("installing KoboldCpp {} ({asset})", release.tag_name);
-    let installed = binary::install(&state.http, &release, asset, &state.dirs.bin(), &cancel, move |p| {
+    crate::applog!("installing {} {} ({asset})", flavor.name(), release.tag_name);
+    let installed = binary::install(&state.http, &release, asset, &state.dirs.bin_of(flavor), &cancel, move |p| {
         let _ = app2.emit("binary-progress", p);
     })
     .await
@@ -278,12 +288,29 @@ pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Opt
         let server = state.server.clone();
         tauri::async_runtime::spawn_blocking(move || server.stop(Duration::from_secs(10))).await.map_err(err)?;
     }
-    state.update_settings(|s| s.binary = Some(installed.clone()))?;
-    binary::prune_old(&state.dirs.bin(), &installed.path);
+    // Recorded for the program it belongs to, even if the mode was switched meanwhile.
+    state.update_settings(|s| match flavor {
+        binary::Flavor::KoboldCpp => s.binary = Some(installed.clone()),
+        binary::Flavor::Esobold => s.esobold_binary = Some(installed.clone()),
+    })?;
+    binary::prune_old(&state.dirs.bin_of(flavor), &installed.path);
     if was_running && let Some(cfg) = state.last_run.lock().map_err(err)?.clone() {
         start(&app, &state, cfg)?;
     }
     Ok(installed)
+}
+
+/// Switch between KoboldCpp and Esobold (Advanced setup › Esobold). Not while a model runs:
+/// the running program would no longer match the mode.
+#[tauri::command]
+pub fn set_esobold(state: State<'_, AppState>, on: bool) -> CmdResult<Settings> {
+    if state.server.is_active() {
+        return Err("Stop the running model first".into());
+    }
+    crate::applog!("Esobold mode {}", if on { "on" } else { "off" });
+    // Releases fetched for the other program don't count any more.
+    *state.releases.lock().map_err(err)? = None;
+    state.update_settings(|s| s.esobold = on)
 }
 
 #[tauri::command]
@@ -305,7 +332,7 @@ pub fn set_binary_path(state: State<'_, AppState>, path: PathBuf) -> CmdResult<I
         return Err("That doesn't look like a KoboldCpp program (its name should contain \"koboldcpp\")".into());
     }
     let b = InstalledBinary { path, version: None, asset: None };
-    state.update_settings(|s| s.binary = Some(b.clone()))?;
+    state.update_settings(|s| s.set_active_binary(Some(b.clone())))?;
     Ok(b)
 }
 
@@ -313,7 +340,7 @@ pub fn set_binary_path(state: State<'_, AppState>, path: PathBuf) -> CmdResult<I
 
 fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     let s = state.settings();
-    let bin = s.binary.as_ref().filter(|b| b.path.is_file()).ok_or("KoboldCpp is not installed yet")?;
+    let bin = s.active_binary().filter(|b| b.path.is_file()).ok_or_else(|| format!("{} is not installed yet", s.flavor().name()))?;
     let models = s.models_dir(&state.dirs);
     std::fs::create_dir_all(&models).map_err(err)?;
     cfg.migrate();
@@ -343,7 +370,9 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     cfg.save(&path).map_err(err)?;
     crate::applog!("start {} with {} (model {}, port {port})", bin.path.display(), path.display(), cfg.model().unwrap_or_else(|| "-".into()));
     if !crate::server::port_free(port) {
-        crate::server::reclaim_port(port, &state.dirs.bin());
+        for f in [binary::Flavor::KoboldCpp, binary::Flavor::Esobold] {
+            crate::server::reclaim_port(port, &state.dirs.bin_of(f));
+        }
     }
     let app2 = app.clone();
     state
@@ -813,7 +842,9 @@ pub struct LibraryView {
 pub async fn library_scan(state: State<'_, AppState>) -> CmdResult<LibraryView> {
     let roots = library_roots(&state);
     let used = state.settings().last_used;
-    let installed = state.settings().binary.and_then(|b| b.version);
+    // The architecture check compares against KoboldCpp's version; Esobold numbers its own.
+    let s = state.settings();
+    let installed = if s.esobold { None } else { s.binary.and_then(|b| b.version) };
     let models_dir = state.settings().models_dir(&state.dirs);
     let folders = roots.iter().map(|(path, recursive)| crate::store::LibraryFolder { path: path.clone(), recursive: *recursive }).collect();
     let (models, drives) = tauri::async_runtime::spawn_blocking(move || crate::library::scan(&roots, &used, installed.as_deref())).await.map_err(err)?;
