@@ -123,8 +123,17 @@ Open question: follow KoboldCpp or Esobold releases.
     #647476, #a0bebe), over the chosen theme. Entering plays a short flicker.
   - The architecture check doesn't compare Esobold's version with KoboldCpp's list (unknown
     architectures show as "unknown", not "won't run").
-  - Not covered: Esobold's extra launch options (Advanced shows KoboldCpp's). The Dock/taskbar
-    icon stays the launcher's own; the in-app logo changes.
+  - Esobold's own options (`config/args-esobold.json`, extracted from Esobold's koboldcpp.py
+    with `tools/extract_args.py`; 24 more than KoboldCpp) appear below the switch in Esobold
+    mode, 14 of them in four groups: tool calls (jinja_tools, jinja_stream_toolcall), files
+    over the API (fs*), the OpenLumara agent (with a warning: tools incl. shell commands, login
+    admin/admin) and developer mode. The admin/autoswap extras need admin mode, which
+    `safety::NEVER` blocks, so they are blocked too; a test checks that every extra is either
+    offered or blocked. The fs*/OpenLumara/developer options are also stripped from templates
+    and imports. In KoboldCpp mode, Esobold-only keys are removed before a start
+    (`jinja_tools` first becomes `jinja`, KoboldCpp's legacy meaning). `jinja_tools` is a legacy
+    KoboldCpp key but a real Esobold option, so it's kept on save (`args::dropped_on_save`).
+  - Not covered: the Dock/taskbar icon stays the launcher's own; the in-app logo changes.
 
 - **Security review (Nov 2026)**, summary in `SECURITY.md`:
   - Launch options in `config::safety`: `NEVER` keys are stripped before every start, and

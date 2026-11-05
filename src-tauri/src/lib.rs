@@ -49,6 +49,7 @@ pub fn run() {
             install_binary,
             cancel_binary_install,
             set_esobold,
+            esobold_options,
             set_binary_path,
             start_server,
             stop_server,

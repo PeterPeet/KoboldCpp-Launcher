@@ -300,6 +300,12 @@ pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Opt
     Ok(installed)
 }
 
+/// Esobold's own options for Advanced setup (shown in Esobold mode).
+#[tauri::command]
+pub fn esobold_options() -> Vec<crate::config::args::ArgSpec> {
+    crate::config::args::esobold_offered()
+}
+
 /// Switch between KoboldCpp and Esobold (Advanced setup › Esobold). Not while a model runs:
 /// the running program would no longer match the mode.
 #[tauri::command]
@@ -345,7 +351,15 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     std::fs::create_dir_all(&models).map_err(err)?;
     cfg.migrate();
     // Last line of defence, whatever the config came from (see config::safety).
-    let removed = crate::config::safety::strip_never(&mut cfg);
+    let mut removed = crate::config::safety::strip_never(&mut cfg);
+    if !s.esobold {
+        // KoboldCpp reads the old "jinja_tools" as "jinja"; keep that meaning before removing
+        // the Esobold-only options.
+        if cfg.get_bool("jinja_tools") && !cfg.get_bool("jinja") {
+            cfg.set("jinja", Value::Bool(true));
+        }
+        removed.extend(crate::config::safety::strip_esobold_only(&mut cfg));
+    }
     if !removed.is_empty() {
         crate::applog!("options removed before start: {}", removed.join(", "));
     }

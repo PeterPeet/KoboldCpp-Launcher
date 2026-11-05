@@ -25,6 +25,8 @@ export interface ReleaseInfo { tag: string; publishedAt: string | null; url: str
 export interface LauncherUpdate { current: string; latest: string | null; url: string | null; updateAvailable: boolean }
 export interface UpdateInfo { current: string | null; latest: ReleaseInfo | null; updateAvailable: boolean }
 export interface Progress { done: number; total: number | null; speed: number }
+/** One launch option from KoboldCpp's (or Esobold's) option table. */
+export interface ArgSpec { dest: string; flags: string[]; group: string; kind: "flag" | "value" | "list" | "optional"; type: string; default: unknown; choices?: unknown[] | null; min?: number | null; max?: number | null; help?: string | null }
 export interface Settings {
   binary: InstalledBinary | null; checkUpdatesOnStart: boolean; includePrereleases: boolean;
   /** Esobold mode (Advanced setup › Esobold) and its own installed program. */
@@ -203,6 +205,13 @@ export const api = {
       return mockSettings.binary!;
     }),
   cancelInstall: () => call<void>("cancel_binary_install", {}, () => {}),
+  /** Esobold's own launch options (offered in Esobold mode). */
+  esoboldOptions: () => call<ArgSpec[]>("esobold_options", {}, () => [
+    { dest: "jinja_tools", flags: ["--jinja_tools"], group: "Advanced Commands", kind: "flag", type: "bool", default: false, help: "Enables using jinja chat template formatting for chat completions endpoint." },
+    { dest: "fsmaxsize", flags: ["--fsmaxsize"], group: "Advanced Commands", kind: "value", type: "int", default: 0, help: "Enable managed filesystem endpoints when > 0." },
+    { dest: "fsdir", flags: ["--fsdir"], group: "Advanced Commands", kind: "value", type: "str", default: "", help: "Filesystem root directory." },
+    { dest: "OpenLumara", flags: ["--OpenLumara"], group: "OpenLumara Commands", kind: "flag", type: "bool", default: false, help: "Enable and launch the OpenLumara AI agent alongside KoboldCpp." },
+  ]),
   setEsobold: (on: boolean) => call<Settings>("set_esobold", { on }, () => (mockSettings = { ...mockSettings, esobold: on })),
   setBinaryPath: (path: string) => call<InstalledBinary>("set_binary_path", { path }),
 

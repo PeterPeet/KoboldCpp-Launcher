@@ -5,7 +5,7 @@
 //! files **sparse**: we preserve every key we read (including ones we don't know) and only add
 //! the keys the user changes.
 
-use super::args::{self, DEPRECATED, DO_NOT_SAVE};
+use super::args;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -266,7 +266,7 @@ impl Kcpps {
     pub fn to_json_string(&self) -> String {
         let mut out = Map::new();
         for (k, v) in &self.map {
-            if DO_NOT_SAVE.contains(&k.as_str()) || DEPRECATED.contains(&k.as_str()) {
+            if args::dropped_on_save(k) {
                 continue;
             }
             let v = match (k.as_str(), v) {

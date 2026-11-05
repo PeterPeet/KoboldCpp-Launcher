@@ -3,7 +3,7 @@
 //! The launcher itself starts KoboldCpp with `--config <file>`, so this never drives a launch;
 //! it is built from the same `Kcpps` the launch uses, so the two cannot drift apart.
 
-use super::args::{self, ArgKind, DEPRECATED, DO_NOT_SAVE};
+use super::args::{self, ArgKind};
 use super::kcpps::Kcpps;
 use serde_json::Value;
 
@@ -17,9 +17,10 @@ pub fn to_args(cfg: &Kcpps) -> Vec<String> {
         out.push("--model".into());
         out.push(m);
     }
-    for spec in &args::table().args {
+    // KoboldCpp's options in upstream order, then Esobold's extras (present only in Esobold mode).
+    for spec in args::table().args.iter().chain(args::esobold_extras()) {
         let key = spec.dest.as_str();
-        if key == "model_param" || SKIP.contains(&key) || DO_NOT_SAVE.contains(&key) || DEPRECATED.contains(&key) {
+        if key == "model_param" || SKIP.contains(&key) || args::dropped_on_save(key) {
             continue;
         }
         let Some(flag) = spec.long_flag() else { continue };
@@ -102,6 +103,15 @@ mod tests {
     use super::*;
     use crate::config::kcpps::Backend;
     use serde_json::json;
+
+    #[test]
+    fn esobold_options_become_flags() {
+        let mut k = Kcpps::new();
+        k.set_model("m.gguf");
+        k.set("jinja_tools", true.into());
+        k.set("fsmaxsize", 512.into());
+        assert_eq!(to_command(&k, "koboldcpp"), "koboldcpp --model m.gguf --jinja_tools --fsmaxsize 512");
+    }
 
     #[test]
     fn builds_typical_command() {

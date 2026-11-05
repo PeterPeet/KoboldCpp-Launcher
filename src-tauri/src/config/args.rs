@@ -89,6 +89,30 @@ pub fn spec(dest: &str) -> Option<&'static ArgSpec> {
     TABLE.get(dest)
 }
 
+/// Options Esobold has and KoboldCpp doesn't (from Esobold's koboldcpp.py, `args-esobold.json`,
+/// refreshed with `tools/extract_args.py` like the main table).
+static ESOBOLD_EXTRAS: LazyLock<Vec<ArgSpec>> = LazyLock::new(|| {
+    let t: ArgTable = serde_json::from_str(include_str!("args-esobold.json")).expect("args-esobold.json is valid");
+    t.args.into_iter().filter(|a| TABLE.get(&a.dest).is_none()).collect()
+});
+
+/// Groups of Esobold extras that only work in admin or autoswap mode, which the launcher blocks
+/// (`safety::NEVER`): not offered.
+const ESOBOLD_ADMIN_GROUPS: &[&str] = &["Administration Commands", "Autoswap Options (Admin Mode)"];
+
+pub fn esobold_extras() -> &'static [ArgSpec] {
+    &ESOBOLD_EXTRAS
+}
+
+pub fn esobold_spec(dest: &str) -> Option<&'static ArgSpec> {
+    ESOBOLD_EXTRAS.iter().find(|a| a.dest == dest)
+}
+
+/// The Esobold extras Advanced setup offers in Esobold mode.
+pub fn esobold_offered() -> Vec<ArgSpec> {
+    ESOBOLD_EXTRAS.iter().filter(|a| !a.hidden && !ESOBOLD_ADMIN_GROUPS.contains(&a.group.as_str())).cloned().collect()
+}
+
 /// Default value for a key, or `Null` if unknown or computed at runtime.
 pub fn default_of(dest: &str) -> Value {
     spec(dest).map(|s| s.default.clone()).unwrap_or(Value::Null)
@@ -99,6 +123,12 @@ pub const DO_NOT_SAVE: &[&str] = &[
     "agent_api_key", "agent_base_url", "allow_config_onready", "analyze", "config", "exportconfig",
     "exporttemplate", "run_bundled_agent", "testmemory", "unpack", "version",
 ];
+
+/// KoboldCpp drops this key when saving a config (never saved, or a legacy name). A legacy
+/// KoboldCpp name that Esobold uses as a real option (`jinja_tools`) is kept.
+pub fn dropped_on_save(key: &str) -> bool {
+    DO_NOT_SAVE.contains(&key) || (DEPRECATED.contains(&key) && esobold_spec(key).is_none())
+}
 
 /// Legacy keys KoboldCpp still reads but drops on save (`deprecated_keys`).
 pub const DEPRECATED: &[&str] = &[

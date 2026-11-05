@@ -86,8 +86,9 @@ Choose Light, or KoboldAI Lite's own default colors, under Advanced setup › La
 ### And also
 - **Esobold mode** (Advanced setup › Esobold ⚠️): switches the launcher to
   [Esobold](https://github.com/esolithe/esobold), a community fork of KoboldCpp with Esolite.
-  You unlock it by typing a phrase; it brings its own colors and icon, and KoboldCpp stays
-  installed next to it.
+  You unlock it by typing a phrase; it brings its own colors and icon, offers Esobold's own
+  options (tool calls, file endpoints, the OpenLumara agent), and KoboldCpp stays installed next
+  to it.
 - **Model Sources:** which Hugging Face accounts feed the lists. The makers are built in; unsloth,
   bartowski, TheDrummer or anyone else can be added. Sources are kept in priority order and can be
   exported and imported as a file.
@@ -150,6 +151,7 @@ When KoboldCpp adds launch options or model architectures, refresh the tables fr
 ```bash
 python3 -I tools/extract_args.py path/to/koboldcpp.py v1.xxx > src-tauri/src/config/args.json
 python3 -I tools/extract_archs.py path/to/src/llama-arch.cpp v1.xxx > src-tauri/src/config/archs.json
+python3 -I tools/extract_args.py path/to/esobold/koboldcpp.py esobold@<commit> > src-tauri/src/config/args-esobold.json
 ```
 
 ### Screenshots

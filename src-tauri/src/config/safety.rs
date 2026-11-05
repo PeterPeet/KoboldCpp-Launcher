@@ -20,11 +20,28 @@ pub const NEVER: &[&str] = &[
     "hordeconfig", "hordekey", "hordeworkername", "hordemodelname", "hordemaxctx", "hordegenlen",
     // Downloads without certificate checks
     "nocertify",
+    // Esobold: only meaningful in admin or autoswap mode (blocked above)
+    "admintextmodelsdir", "admindatadir", "admindocsdir", "adminallowhf",
+    "autoswapmode_skiptextunload", "autoswapmode_skipsstunload", "autoswapmode_skipttsunload",
+    "autoswapmode_skipembedunload", "autoswapmode_skipmusicunload", "autoswapmode_skipimageunload",
 ];
 
 /// Allowed from Advanced setup and the user's presets, removed from templates and imports:
 /// they make the server reachable from other computers or lock the user out.
-pub const UNTRUSTED_ONLY: &[&str] = &["host", "remotetunnel", "multiuser", "multiplayer", "password"];
+pub const UNTRUSTED_ONLY: &[&str] = &[
+    "host", "remotetunnel", "multiuser", "multiplayer", "password",
+    // Esobold: file endpoints over the API, developer tools, the OpenLumara agent (runs tools and
+    // shell commands on this computer; its web login defaults to admin:admin)
+    "fsmaxsize", "fsdir", "fsdirect", "developerMode",
+    "OpenLumara", "OpenLumara_TemporaryMode", "OpenLumara_configfile", "OpenLumara_datadir",
+    "OpenLumara_sandboxfolder", "OpenLumara_backuppath", "OpenLumara_apiurl", "OpenLumara_requirelogin",
+];
+
+/// Esobold-only options can't go to KoboldCpp (it doesn't know them): removed in KoboldCpp mode.
+pub fn strip_esobold_only(cfg: &mut Kcpps) -> Vec<String> {
+    let keys: Vec<&str> = super::args::esobold_extras().iter().map(|a| a.dest.as_str()).collect();
+    strip(cfg, &keys)
+}
 
 /// Remove what must never reach KoboldCpp. Returns the keys that were there.
 pub fn strip_never(cfg: &mut Kcpps) -> Vec<String> {
@@ -73,7 +90,13 @@ mod tests {
     fn every_listed_key_is_a_real_option() {
         // Typos would silently let an option through: all names must exist in KoboldCpp's table.
         for k in NEVER.iter().chain(UNTRUSTED_ONLY) {
-            assert!(super::super::args::spec(k).is_some(), "{k} is not a KoboldCpp option");
+            assert!(super::super::args::spec(k).or(super::super::args::esobold_spec(k)).is_some(), "{k} is not a KoboldCpp or Esobold option");
         }
+        // Every Esobold extra is either offered or blocked, never silently passed through.
+        let offered: Vec<String> = super::super::args::esobold_offered().into_iter().map(|a| a.dest).collect();
+        for a in super::super::args::esobold_extras() {
+            assert!(offered.contains(&a.dest) || NEVER.contains(&a.dest.as_str()), "{} is neither offered nor blocked", a.dest);
+        }
+        assert_eq!(offered.len(), 14);
     }
 }

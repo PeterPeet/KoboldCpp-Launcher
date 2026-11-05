@@ -1,7 +1,7 @@
 // Advanced setup: every control edits the launch config (`S.cfg`), which is what KoboldCpp gets.
 // The command line below is generated from the same config by the Rust side.
 
-import { api, fmtBytes, inTauri, type Gpu, type Kcpps, type LocalModel, type PresetInfo } from "../api";
+import { api, fmtBytes, inTauri, type ArgSpec, type Gpu, type Kcpps, type LocalModel, type PresetInfo } from "../api";
 import { $, checkbox, h, select, toggle, toast, type Kid } from "../dom";
 import { isActive, launch, stop } from "../server";
 import { refreshBinary, reveal } from "../dialogs/update";
@@ -380,6 +380,71 @@ function logsPage(pane: HTMLElement) {
 
 let esoPhrase = "";
 let esoBusy = false;
+let esoOpts: ArgSpec[] | null = null;
+
+/** Esobold's own options, in plain words, by topic. Help texts come from Esobold. */
+const ESO_LABEL: Record<string, string> = {
+  jinja_tools: "Jinja tool calls", jinja_stream_toolcall: "Stream tool calls while they are written",
+  fsmaxsize: "Size limit (0 = off)", fsdir: "Folder", fsdirect: "Work directly on disk",
+  OpenLumara: "Start OpenLumara", OpenLumara_TemporaryMode: "Temporary mode", OpenLumara_requirelogin: "Require login",
+  OpenLumara_configfile: "Config file", OpenLumara_datadir: "Data folder", OpenLumara_sandboxfolder: "Sandbox folder",
+  OpenLumara_backuppath: "Backup folder", OpenLumara_apiurl: "API URL", developerMode: "Developer mode",
+};
+const ESO_GROUPS: [string, string, (d: string) => boolean][] = [
+  ["Tool calls", "", (d) => d.startsWith("jinja")],
+  ["Files over the API", "Lets clients of the API read and write files in one folder on this computer.", (d) => d.startsWith("fs")],
+  ["OpenLumara agent", "", (d) => d.startsWith("OpenLumara")],
+  ["Developer", "", (d) => d === "developerMode"],
+];
+const isPath = (d: string) => /dir$|folder$|path$|configfile$/i.test(d);
+
+/** One control for an option from Esobold's table: switch, number, text or folder/file. */
+function esoControl(o: ArgSpec): HTMLElement {
+  const d = o.dest;
+  const label = ESO_LABEL[d] ?? d;
+  const hint = o.help ?? undefined;
+  if (o.kind === "flag" || o.type === "bool") {
+    const cur = get(d) ?? o.default;
+    return row(label, toggle(`eso-${d}`, cur === true, (v) => set({ [d]: v })), hint);
+  }
+  if (o.type === "int" || o.type === "float") {
+    const i = h("input", { type: "number", id: `eso-${d}`, value: num(d, Number(o.default ?? 0)), min: "0", style: "width:120px" }) as HTMLInputElement;
+    i.addEventListener("change", () => set({ [d]: o.type === "int" ? Math.max(0, Math.round(+i.value || 0)) : Math.max(0, +i.value || 0) }));
+    return row(label, i, hint);
+  }
+  const t = h("input", { type: "text", id: `eso-${d}`, value: str(d), spellcheck: "false", style: "min-width:260px" }) as HTMLInputElement;
+  t.addEventListener("change", () => set({ [d]: t.value.trim() }));
+  if (!isPath(d)) return row(label, t, hint);
+  const pick = async () => {
+    if (!inTauri) return toast("Choosing works in the desktop app");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const file = /configfile$/i.test(d);
+    const p = await open(file ? { filters: [{ name: "YAML", extensions: ["yaml", "yml"] }] } : { directory: true });
+    if (typeof p === "string") { t.value = p; set({ [d]: p }); }
+  };
+  return row(label, h("span", { style: "display:inline-flex;gap:6px" }, t, h("button", { onclick: pick }, "Choose…")), hint);
+}
+
+function esoOptionsSection(): HTMLElement {
+  if (esoOpts === null) {
+    api.esoboldOptions().then((o) => { esoOpts = o; render(); }, () => { esoOpts = []; render(); });
+    return h("p", { class: "note" }, "Loading Esobold's options…");
+  }
+  const opts = esoOpts;
+  const out = h("div", { style: "display:grid;gap:14px" }, h("h2", { style: "font-size:17px;margin:8px 0 0" }, "Esobold options"),
+    h("p", { class: "note", style: "margin:0" }, "Options only Esobold has. Like everything in Advanced setup they apply when you start from here (the button below) or from a saved preset. Esobold's admin and autoswap options are left out, because the launcher doesn't allow admin mode."));
+  for (const [name, note, match] of ESO_GROUPS) {
+    const list = opts.filter((o) => match(o.dest));
+    if (!list.length) continue;
+    const grp = h("div", { class: "grp" }, ...list.map(esoControl));
+    out.append(h("h3", { style: "margin:4px 0 0" }, name));
+    if (note) out.append(h("p", { class: "note", style: "margin:0" }, note));
+    if (name === "OpenLumara agent")
+      out.append(h("div", { class: "eso-warn" }, h("p", {}, "OpenLumara is an AI agent that runs alongside Esobold and uses tools on this computer, including shell commands (temporary mode limits writing to disk, but not shell commands). Its web page asks for a login that starts as admin / admin: change it in OpenLumara after the first start.")));
+    out.append(grp);
+  }
+  return out;
+}
 
 function esoboldPage(pane: HTMLElement) {
   const on = eso();
@@ -418,7 +483,7 @@ function esoboldPage(pane: HTMLElement) {
     on ? null : h("label", { for: "esoPhrase", class: "eso-label" }, "Please type this in the field to unlock the switch: ", h("b", {}, MANTRA)),
     on ? null : input,
     h("label", { class: "switch eso-switch", for: "esoSwitch" }, sw, on ? "Esobold mode is on" : "Esobold mode"),
-    h("p", { class: "note" }, "Advanced setup shows KoboldCpp's options. Esobold accepts them too, but its own extra options aren't offered here yet.")));
+    on ? esoOptionsSection() : h("p", { class: "note" }, "After switching on, Esobold's own options appear here. The other Advanced pages keep KoboldCpp's options, which Esobold understands too.")));
 }
 
 function appearancePage(pane: HTMLElement) {
@@ -455,7 +520,8 @@ export function renderAdvanced() {
 
   ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage, esobold: esoboldPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
   // The log page is a viewer: no command line or start buttons below it.
-  if (A.page === "logs" || A.page === "appearance" || A.page === "esobold") return root;
+  // In Esobold mode its options page ends with the command line and start buttons like the others.
+  if (A.page === "logs" || A.page === "appearance" || (A.page === "esobold" && !eso())) return root;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(cli); toast("Command copied"); }

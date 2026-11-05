@@ -1,0 +1,2797 @@
+{
+ "source": "koboldcpp.py",
+ "version": "esobold@a90fe85",
+ "args": [
+  {
+   "dest": "usecuda",
+   "flags": [
+    "--usecuda",
+    "--usecublas",
+    "--usehipblas"
+   ],
+   "group": "General",
+   "exclusive": "compatgroup",
+   "kind": "list",
+   "nargs": "*",
+   "type": "str",
+   "default": null,
+   "choices": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "all",
+    "mmq",
+    "nommq",
+    "normal",
+    "lowvram",
+    "rowsplit"
+   ],
+   "hidden": false,
+   "help": "Use CUDA for GPU Acceleration. Requires CUDA. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs."
+  },
+  {
+   "dest": "usevulkan",
+   "flags": [
+    "--usevulkan"
+   ],
+   "group": "General",
+   "exclusive": "compatgroup",
+   "kind": "list",
+   "nargs": "*",
+   "type": "int",
+   "default": null,
+   "hidden": false,
+   "help": "Use Vulkan for GPU Acceleration. Can optionally specify one or more GPU Device ID (e.g. --usevulkan 0), leave blank to autodetect."
+  },
+  {
+   "dest": "usecpu",
+   "flags": [
+    "--usecpu"
+   ],
+   "group": "General",
+   "exclusive": "compatgroup",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Do not use any GPU acceleration (CPU Only)"
+  },
+  {
+   "dest": "model",
+   "flags": [
+    "--model",
+    "-m"
+   ],
+   "group": "General",
+   "exclusive": "modelgroup",
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": [],
+   "hidden": false,
+   "help": "Model file to load. Accepts multiple values if they are URLs."
+  },
+  {
+   "dest": "model_param",
+   "flags": [
+    "model_param"
+   ],
+   "group": "General",
+   "exclusive": "modelgroup",
+   "kind": "optional",
+   "type": "str",
+   "default": null,
+   "hidden": false,
+   "help": "Model file to load (positional)"
+  },
+  {
+   "dest": "config",
+   "flags": [
+    "--config"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": 1,
+   "type": "str",
+   "default": null,
+   "hidden": false,
+   "help": "Load settings from a .kcpps file. Other arguments will be ignored"
+  },
+  {
+   "dest": "contextsize",
+   "flags": [
+    "--contextsize",
+    "--ctx-size",
+    "-c"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "min": 256,
+   "max": 524288,
+   "kind": "value",
+   "type": "int",
+   "default": 16384,
+   "hidden": false,
+   "help": "Controls the memory allocated for maximum context size, only change if you need more RAM for big contexts. (default {default_maxctx})."
+  },
+  {
+   "dest": "gpulayers",
+   "flags": [
+    "--gpulayers",
+    "--gpu-layers",
+    "--n-gpu-layers",
+    "-ngl"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": -1,
+   "const": 1,
+   "hidden": false,
+   "help": "Set number of layers to offload to GPU (when using GPU). Set to -1 to enable autofit (default), set to 0 to disable GPU offload."
+  },
+  {
+   "dest": "host",
+   "flags": [
+    "--host"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Host IP to listen on. If this flag is not set, all routable interfaces are accepted."
+  },
+  {
+   "dest": "launch",
+   "flags": [
+    "--launch"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Launches a web browser when load is completed."
+  },
+  {
+   "dest": "tensor_split",
+   "flags": [
+    "--tensor_split",
+    "--tensorsplit",
+    "--tensor-split",
+    "-ts"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "float",
+   "default": null,
+   "hidden": false,
+   "help": "For CUDA and Vulkan only, ratio to split tensors across multiple GPUs, space-separated list of proportions, e.g. 7 3"
+  },
+  {
+   "dest": "threads",
+   "flags": [
+    "--threads",
+    "-t"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": null,
+   "dynamic": true,
+   "hidden": false,
+   "help": "Use a custom number of threads if specified. Otherwise, uses an amount based on CPU cores"
+  },
+  {
+   "dest": "port",
+   "flags": [
+    "--port"
+   ],
+   "group": "General",
+   "exclusive": "portgroup",
+   "kind": "value",
+   "type": "int",
+   "default": 5001,
+   "hidden": false,
+   "help": "Port to listen on. (Defaults to {defaultport})"
+  },
+  {
+   "dest": "port_param",
+   "flags": [
+    "port_param"
+   ],
+   "group": "General",
+   "exclusive": "portgroup",
+   "kind": "optional",
+   "type": "int",
+   "default": 5001,
+   "hidden": false,
+   "help": "Port to listen on (positional)"
+  },
+  {
+   "dest": "version",
+   "flags": [
+    "--version"
+   ],
+   "group": "General",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Prints version and exits."
+  },
+  {
+   "dest": "agent",
+   "flags": [
+    "--agent"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Launches the simple KoboldCpp Agent in a new terminal window, or the current terminal with --cli."
+  },
+  {
+   "dest": "analyze",
+   "flags": [
+    "--analyze"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Reads the metadata, weight types and tensor names in any GGUF or safetensors file."
+  },
+  {
+   "dest": "autofit",
+   "flags": [
+    "--autofit",
+    "--fit",
+    "-fit"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Forces autofit, which attempts to fit the model in the best possible way. Overrides everything else."
+  },
+  {
+   "dest": "autofitpadding",
+   "flags": [
+    "--autofitpadding"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 1024,
+   "hidden": false,
+   "help": "How much spare allowance in MB should autofit reserve? If it's too little, the load might fail."
+  },
+  {
+   "dest": "batchsize",
+   "flags": [
+    "--batchsize",
+    "--blasbatchsize",
+    "--batch-size",
+    "-b"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 512,
+   "choices": [
+    -1,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096
+   ],
+   "hidden": false,
+   "help": "Sets the logical batch size used in batched processing (default 512). Setting it to -1 disables batched mode, but keeps other benefits like GPU offload."
+  },
+  {
+   "dest": "ubatchsize",
+   "flags": [
+    "--ubatchsize",
+    "--ubatch-size",
+    "-ub"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": -1,
+   "choices": [
+    -1,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096
+   ],
+   "hidden": false,
+   "help": "Sets the physical batch size used in batched processing. Setting it to -1 uses the same value as batchsize (default)."
+  },
+  {
+   "dest": "benchmark",
+   "flags": [
+    "--benchmark"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "str",
+   "default": null,
+   "const": "stdout",
+   "hidden": false,
+   "help": "Do not start server, instead run benchmarks. If filename is provided, appends results to provided file."
+  },
+  {
+   "dest": "blasthreads",
+   "flags": [
+    "--blasthreads",
+    "--batchthreads",
+    "--threadsbatch",
+    "--threads-batch"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Use a different number of threads during batching if specified. Otherwise, has the same value as --threads"
+  },
+  {
+   "dest": "chatcompletionsadapter",
+   "flags": [
+    "--chatcompletionsadapter"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "AutoGuess",
+   "hidden": false,
+   "help": "Select an optional ChatCompletions Adapter JSON file to force custom instruct tags."
+  },
+  {
+   "dest": "cli",
+   "flags": [
+    "--cli"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Runs interactive terminal chat without an HTTP server. With --agent, runs the agent in this terminal using a loopback HTTP server."
+  },
+  {
+   "dest": "debugmode",
+   "flags": [
+    "--debugmode"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 1,
+   "hidden": false,
+   "help": "Shows additional debug info in the terminal. Levels: -1 (Horde-quiet, suppresses non-essential prints; auto-applied when Horde args are set), 0 (default, normal output), 1 (verbose: extra slot/cache info, larger print buffers, retains horde-debug prefix). Passing the flag without a value implies 1."
+  },
+  {
+   "dest": "defaultgenamt",
+   "flags": [
+    "--defaultgenamt"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "min": 64,
+   "max": 32768,
+   "kind": "value",
+   "type": "int",
+   "default": 2048,
+   "hidden": false,
+   "help": "How many tokens to generate by default, if not specified. Must be smaller than context size. Usually, your frontend GUI will override this."
+  },
+  {
+   "dest": "device",
+   "flags": [
+    "--device",
+    "-dev"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Set llama.cpp compatible device selection override. Comma separated. Overrides normal device choices."
+  },
+  {
+   "dest": "downloaddir",
+   "flags": [
+    "--downloaddir"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a directory that models will be downloaded to or searched from, if unset uses the working directory."
+  },
+  {
+   "dest": "draftamount",
+   "flags": [
+    "--draftamount",
+    "--draft-max",
+    "--draft-n",
+    "--spec-draft-n-max"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 4,
+   "hidden": false,
+   "help": "How many tokens to draft per chunk before verifying results"
+  },
+  {
+   "dest": "draftgpulayers",
+   "flags": [
+    "--draftgpulayers",
+    "--gpu-layers-draft",
+    "--n-gpu-layers-draft",
+    "-ngld"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 999,
+   "hidden": false,
+   "help": "How many layers to offload to GPU for the draft model (default=full offload)"
+  },
+  {
+   "dest": "draftgpusplit",
+   "flags": [
+    "--draftgpusplit"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "float",
+   "default": null,
+   "hidden": false,
+   "help": "GPU layer distribution ratio for draft model (default=same as main). Only works if multi-GPUs selected for MAIN model and tensor_split is set!"
+  },
+  {
+   "dest": "draftmodel",
+   "flags": [
+    "--draftmodel",
+    "--model-draft",
+    "-md"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Load a small draft model for speculative decoding. It will be fully offloaded. Vocab must match the main model."
+  },
+  {
+   "dest": "enableguidance",
+   "flags": [
+    "--enableguidance"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables the use of Classifier-Free-Guidance, which allows the use of negative prompts. Has performance and memory impact."
+  },
+  {
+   "dest": "exportconfig",
+   "flags": [
+    "--exportconfig"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Exports the current selected arguments as a .kcpps settings file"
+  },
+  {
+   "dest": "exporttemplate",
+   "flags": [
+    "--exporttemplate"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Exports the current selected arguments as a .kcppt template file"
+  },
+  {
+   "dest": "failsafe",
+   "flags": [
+    "--failsafe"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Use failsafe mode, extremely old CPU compatibility mode that should work on all devices."
+  },
+  {
+   "dest": "foreground",
+   "flags": [
+    "--foreground"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues."
+  },
+  {
+   "dest": "gendefaults",
+   "flags": [
+    "--gendefaults"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Sets extra default parameters for some fields in API requests, as a JSON string."
+  },
+  {
+   "dest": "gendefaultsoverwrite",
+   "flags": [
+    "--gendefaultsoverwrite"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Allow the gendefaults parameters to overwrite the original value in API payloads."
+  },
+  {
+   "dest": "genlimit",
+   "flags": [
+    "--genlimit",
+    "--promptlimit"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Sets the maximum number of generated tokens, it will restrict all generations to this or lower. Also usable with --prompt or --benchmark."
+  },
+  {
+   "dest": "highpriority",
+   "flags": [
+    "--highpriority"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution."
+  },
+  {
+   "dest": "ignoremissing",
+   "flags": [
+    "--ignoremissing"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Ignores all missing non-essential files, just skipping them instead."
+  },
+  {
+   "dest": "jinja",
+   "flags": [
+    "--jinja"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables using jinja chat template formatting for chat completions endpoint. Other endpoints are unaffected. Tool calls are done without jinja."
+  },
+  {
+   "dest": "jinja_stream_toolcall",
+   "flags": [
+    "--jinja_stream_toolcall",
+    "--jinja-stream-toolcall",
+    "--jinjastreamtoolcall"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "When jinja tool calls are active, stream the tool call content as tokens are generated rather than buffering silently until generation is complete. Implies --jinja and --jinja_tools."
+  },
+  {
+   "dest": "jinja_kwargs",
+   "flags": [
+    "--jinja_kwargs",
+    "--jinja-kwargs",
+    "--jinjakwargs",
+    "--chat-template-kwargs"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Set additional fields for Jinja JSON template parser, must be a valid JSON object."
+  },
+  {
+   "dest": "jinja_tools",
+   "flags": [
+    "--jinja_tools",
+    "--jinja-tools",
+    "--jinjatools"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables using jinja chat template formatting for chat completions endpoint. Other endpoints are unaffected. Tool calls are done with jinja."
+  },
+  {
+   "dest": "jinjatemplate",
+   "flags": [
+    "--jinjatemplate",
+    "--chat-template-file"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select a custom Jinja chat template, will overwrite model jinja chat template"
+  },
+  {
+   "dest": "jinjathink",
+   "flags": [
+    "--jinjathink"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "default",
+   "choices": [
+    "default",
+    "true",
+    "false"
+   ],
+   "hidden": false,
+   "help": "A quick way to enable or disable thinking in the jinja template."
+  },
+  {
+   "dest": "lora",
+   "flags": [
+    "--lora"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": null,
+   "hidden": false,
+   "help": "GGUF models only, applies a lora file on top of model."
+  },
+  {
+   "dest": "loramult",
+   "flags": [
+    "--loramult"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "float",
+   "default": 1.0,
+   "hidden": false,
+   "help": "Multiplier for the Text LORA model to be applied."
+  },
+  {
+   "dest": "lowvram",
+   "flags": [
+    "--lowvram",
+    "-nkvo",
+    "--no-kv-offload"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "If supported by the backend, do not offload KV to GPU (lowvram mode). Not recommended, will be slow."
+  },
+  {
+   "dest": "maingpu",
+   "flags": [
+    "--maingpu",
+    "--main-gpu",
+    "-mg"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": -1,
+   "hidden": false,
+   "help": "Only used in a multi-gpu setup. Sets the index of the main GPU that will be used."
+  },
+  {
+   "dest": "maxrequestsize",
+   "flags": [
+    "--maxrequestsize"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 32,
+   "hidden": false,
+   "help": "Specify a max request payload size. Any requests to the server larger than this size will be dropped. Do not change if unsure."
+  },
+  {
+   "dest": "mcpfile",
+   "flags": [
+    "--mcpfile"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify path to mcp.json which contains the Cladue Desktop compatible MCP server config."
+  },
+  {
+   "dest": "mmproj",
+   "flags": [
+    "--mmproj"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select a multimodal projector file for vision models."
+  },
+  {
+   "dest": "mmprojcpu",
+   "flags": [
+    "--mmprojcpu",
+    "--no-mmproj-offload"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Force CLIP for Vision mmproj always on CPU."
+  },
+  {
+   "dest": "moecpu",
+   "flags": [
+    "--moecpu",
+    "--n-cpu-moe",
+    "-ncmoe"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 999,
+   "hidden": false,
+   "help": "Keep the Mixture of Experts (MoE) weights of the first N layers in the CPU. If no value is provided, applies to all layers."
+  },
+  {
+   "dest": "ffncpu",
+   "flags": [
+    "--ffncpu",
+    "--n-cpu-ffn",
+    "-ncffn"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 999,
+   "hidden": false,
+   "help": "Keep the dense FFN weights of the first N layers in the CPU. If no value is provided, applies to all layers."
+  },
+  {
+   "dest": "moeexperts",
+   "flags": [
+    "--moeexperts"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": -1,
+   "hidden": false,
+   "help": "How many experts to use for MoE models (default=follow gguf)"
+  },
+  {
+   "dest": "multiuser",
+   "flags": [
+    "--multiuser"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 10,
+   "const": 10,
+   "hidden": false,
+   "help": "Set maximum number of queued incoming requests allowed."
+  },
+  {
+   "dest": "multiplayer",
+   "flags": [
+    "--multiplayer"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Hosts a shared multiplayer session that others can join."
+  },
+  {
+   "dest": "nocertify",
+   "flags": [
+    "--nocertify"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions."
+  },
+  {
+   "dest": "nofastforward",
+   "flags": [
+    "--nofastforward"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "If set, do not attempt to fast forward GGUF context (always reprocess). Will also enable noshift"
+  },
+  {
+   "dest": "noflashattention",
+   "flags": [
+    "--noflashattention",
+    "--no-flash-attn",
+    "-nofa"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Disables flash attention."
+  },
+  {
+   "dest": "noavx2",
+   "flags": [
+    "--noavx2"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Do not use AVX2 instructions, a slower compatibility mode for older devices."
+  },
+  {
+   "dest": "nobostoken",
+   "flags": [
+    "--nobostoken"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Prevents BOS token from being added at the start of any prompt. Usually NOT recommended for most models."
+  },
+  {
+   "dest": "nommq",
+   "flags": [
+    "--nommq"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Disables MMQ, only used for cuda backend. This flag may be removed in future."
+  },
+  {
+   "dest": "nomodel",
+   "flags": [
+    "--nomodel"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Allows you to launch the GUI alone, without selecting any model."
+  },
+  {
+   "dest": "noshift",
+   "flags": [
+    "--noshift",
+    "--no-context-shift"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "If set, do not attempt to Trim and Shift the GGUF context."
+  },
+  {
+   "dest": "noswa",
+   "flags": [
+    "--noswa",
+    "--swa-full"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "If set, uses full-size SWA KV Cache. Otherwise, SWA will be enabled automatically on models that support it. SWA saves memory but cannot be used with context shifting."
+  },
+  {
+   "dest": "onready",
+   "flags": [
+    "--onready"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "An optional shell command to execute after the model has been loaded."
+  },
+  {
+   "dest": "allow_config_onready",
+   "flags": [
+    "--allow-config-onready"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Allow .kcpps config files loaded after launch to set --onready commands. Only use with trusted configs."
+  },
+  {
+   "dest": "fsmaxsize",
+   "flags": [
+    "--fsmaxsize",
+    "--tmpfsmaxsize"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Enable managed filesystem endpoints when > 0. In memory mode this is a hard size limit; in direct disk mode this is currently enable-gating only (not a disk quota)."
+  },
+  {
+   "dest": "fsdir",
+   "flags": [
+    "--fsdir",
+    "--tmpfsdir"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Filesystem root directory. In memory mode it preloads files from disk; in direct mode it is the sandbox root."
+  },
+  {
+   "dest": "fsdirect",
+   "flags": [
+    "--fsdirect",
+    "--tmpfsdirect"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Use direct on-disk filesystem mode sandboxed to --fsdir instead of in-memory storage. Requires --fsmaxsize > 0 to enable filesystem endpoints."
+  },
+  {
+   "dest": "overridekv",
+   "flags": [
+    "--overridekv",
+    "--override-kv"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Override metadata value by key. Separate multiple values with commas. Format is name=type:value. Types: int, float, bool, str"
+  },
+  {
+   "dest": "overridenativecontext",
+   "flags": [
+    "--overridenativecontext"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Overrides the native trained context of the loaded model with a custom value to be used for Rope scaling."
+  },
+  {
+   "dest": "overridetensors",
+   "flags": [
+    "--overridetensors",
+    "--override-tensor",
+    "-ot"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Override selected backend for specific tensors matching tensor_name_regex_pattern=buffer_type, same as in llama.cpp."
+  },
+  {
+   "dest": "developerMode",
+   "flags": [
+    "--developerMode"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables developer utilities, such as hot reloading of Kobold Lite."
+  },
+  {
+   "dest": "parallelrequests",
+   "flags": [
+    "--parallelrequests",
+    "--continuous-batching",
+    "--contbatch"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "min": 0,
+   "max": 32,
+   "kind": "value",
+   "type": "int",
+   "default": 1,
+   "hidden": false,
+   "help": "Allows multiple requests to be batched and executed in parallel. Only works for basic text generation requests (Experimental, No media)"
+  },
+  {
+   "dest": "password",
+   "flags": [
+    "--password"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "dynamic": true,
+   "hidden": false,
+   "help": "Enter a password required to use this instance. This key will be required for all text endpoints. Image endpoints are not secured. Can also be set with env var KCPP_PASSWORD"
+  },
+  {
+   "dest": "preloadstory",
+   "flags": [
+    "--preloadstory"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Configures a prepared story json save file to be hosted on the server, which frontends (such as KoboldAI Lite) can access over the API."
+  },
+  {
+   "dest": "prompt",
+   "flags": [
+    "--prompt",
+    "-p"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Passing a prompt string triggers a direct inference, loading the model, outputs the response to stdout and exits. Can be used alone or with benchmark."
+  },
+  {
+   "dest": "quantkv",
+   "flags": [
+    "--quantkv"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "f16",
+   "choices": [
+    "f16",
+    "bf16",
+    "q8_0",
+    "q5_1",
+    "q4_0",
+    "0",
+    "1",
+    "2",
+    "3"
+   ],
+   "hidden": false,
+   "help": "Sets the KV cache data type quantization, options are f16/bf16/q8_0/q5_1/q4_0. Requires Flash Attention for full effect, otherwise only K cache is quantized."
+  },
+  {
+   "dest": "quiet",
+   "flags": [
+    "--quiet"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enable quiet mode, which hides generation inputs and outputs in the terminal. Quiet mode is automatically enabled when running a horde worker."
+  },
+  {
+   "dest": "ratelimit",
+   "flags": [
+    "--ratelimit"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "If enabled, rate limit generative request by IP address. Each IP can only send a new request once per X seconds."
+  },
+  {
+   "dest": "reasoningeffort",
+   "flags": [
+    "--reasoningeffort"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "default",
+   "choices": [
+    "default",
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ],
+   "hidden": false,
+   "help": "A quick way to set the default reasoning effort. API values override this."
+  },
+  {
+   "dest": "remotetunnel",
+   "flags": [
+    "--remotetunnel"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Uses Cloudflare to create a remote tunnel, allowing you to access koboldcpp remotely over the internet even behind a firewall."
+  },
+  {
+   "dest": "ropeconfig",
+   "flags": [
+    "--ropeconfig"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "float",
+   "default": [
+    0.0,
+    10000.0
+   ],
+   "hidden": false,
+   "help": "If set, uses customized RoPE scaling from configured frequency scale and frequency base (e.g. --ropeconfig 0.25 10000). Otherwise, uses NTK-Aware scaling set automatically based on context size. For linear rope, simply set the freq-scale and ignore the freq-base"
+  },
+  {
+   "dest": "savedatafile",
+   "flags": [
+    "--savedatafile"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "If enabled, creates or opens a persistent database file on the server, that allows users to save and load their data remotely. A new file is created if it does not exist."
+  },
+  {
+   "dest": "singleinstance",
+   "flags": [
+    "--singleinstance"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Allows this KoboldCpp instance to be shut down by any new instance requesting the same port, preventing duplicate servers from clashing on a port."
+  },
+  {
+   "dest": "smartcache",
+   "flags": [
+    "--smartcache"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 1,
+   "hidden": false,
+   "help": "Enables intelligent context switching by saving KV cache snapshots to RAM. Requires fast forwarding."
+  },
+  {
+   "dest": "smartcontext",
+   "flags": [
+    "--smartcontext"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Reserving a portion of context to try processing less frequently. Outdated. Not recommended."
+  },
+  {
+   "dest": "splitmode",
+   "flags": [
+    "--splitmode",
+    "-sm",
+    "--split-mode"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "dynamic": true,
+   "choices": [
+    "layer",
+    "row",
+    "tensor"
+   ],
+   "hidden": false,
+   "help": "How to split the model across multiple GPUs"
+  },
+  {
+   "dest": "ssl",
+   "flags": [
+    "--ssl"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": null,
+   "hidden": false,
+   "help": "Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided"
+  },
+  {
+   "dest": "swapadding",
+   "flags": [
+    "--swapadding"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "How much extra to pad the SWA KV cache, this affects the rewind limit before reprocessing is forced."
+  },
+  {
+   "dest": "unpack",
+   "flags": [
+    "--unpack"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Extracts the file contents of the KoboldCpp binary into a target directory."
+  },
+  {
+   "dest": "usemtp",
+   "flags": [
+    "--usemtp"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables MTP layers to be used for drafting (speculative decoding) if present"
+  },
+  {
+   "dest": "usemlock",
+   "flags": [
+    "--usemlock",
+    "--mlock"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables mlock, preventing the RAM used to load the model from being paged out. Not usually recommended."
+  },
+  {
+   "dest": "usemmap",
+   "flags": [
+    "--usemmap"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": "compatgroup3",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "If set, uses mmap to load model."
+  },
+  {
+   "dest": "usedirectio",
+   "flags": [
+    "--usedirectio",
+    "--directio",
+    "--direct-io",
+    "-dio"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": "compatgroup3",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Use direct I/O to load GGUF models if available. May improve cold-load times on some storage."
+  },
+  {
+   "dest": "visionmaxres",
+   "flags": [
+    "--visionmaxres"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 1024,
+   "hidden": false,
+   "help": "Clamp MMProj vision maximum allowed resolution. Allowed values are between 512 to 2048 px (default 1024)."
+  },
+  {
+   "dest": "visionmaxtokens",
+   "flags": [
+    "--visionmaxtokens",
+    "--image-max-tokens"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": -1,
+   "hidden": false,
+   "help": "Override the maximum tokens for the MMProj embedding (default -1)."
+  },
+  {
+   "dest": "visionmintokens",
+   "flags": [
+    "--visionmintokens",
+    "--image-min-tokens"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": -1,
+   "hidden": false,
+   "help": "Override the minimum tokens for the MMProj embedding (default -1)."
+  },
+  {
+   "dest": "websearch",
+   "flags": [
+    "--websearch"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enable the local search engine proxy so Web Searches can be done."
+  },
+  {
+   "dest": "showgui",
+   "flags": [
+    "--showgui"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": "compatgroup2",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Always show the GUI instead of launching the model right away when loading settings from a .kcpps file."
+  },
+  {
+   "dest": "skiplauncher",
+   "flags": [
+    "--skiplauncher"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": "compatgroup2",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Doesn't display or use the GUI launcher. Overrides showgui."
+  },
+  {
+   "dest": "hordemodelname",
+   "flags": [
+    "--hordemodelname"
+   ],
+   "group": "Horde Worker Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Sets your AI Horde display model name."
+  },
+  {
+   "dest": "hordeworkername",
+   "flags": [
+    "--hordeworkername"
+   ],
+   "group": "Horde Worker Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Sets your AI Horde worker name."
+  },
+  {
+   "dest": "hordekey",
+   "flags": [
+    "--hordekey"
+   ],
+   "group": "Horde Worker Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Sets your AI Horde API key."
+  },
+  {
+   "dest": "hordemaxctx",
+   "flags": [
+    "--hordemaxctx"
+   ],
+   "group": "Horde Worker Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Sets the maximum context length your worker will accept from an AI Horde job. If 0, matches main context limit."
+  },
+  {
+   "dest": "hordegenlen",
+   "flags": [
+    "--hordegenlen"
+   ],
+   "group": "Horde Worker Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Sets the maximum number of tokens your worker will generate from an AI horde job."
+  },
+  {
+   "dest": "sdaudiovae",
+   "flags": [
+    "--sdaudiovae"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify an image generation audio VAE for LTX2.3 video generation."
+  },
+  {
+   "dest": "sdclamped",
+   "flags": [
+    "--sdclamped"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 512,
+   "hidden": false,
+   "help": "If specified, limit generation steps and image size for shared use. Accepts an extra optional parameter that indicates maximum resolution (eg. 768 clamps to 768x768, min 512px, disabled if 0)."
+  },
+  {
+   "dest": "sdclampedsoft",
+   "flags": [
+    "--sdclampedsoft"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "If specified, limit max image size to curb memory usage. Similar to --sdclamped, but less strict, allows trade-offs between width and height (e.g. 640 would allow 640x640, 512x768 and 768x512 images)."
+  },
+  {
+   "dest": "sdclip1",
+   "flags": [
+    "--sdclip1",
+    "--sdclipl"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify first safetensors Clip model (SD3 or Flux Clip-L, WAN or QwenImg vision). Leave blank if prebaked or unused."
+  },
+  {
+   "dest": "sdclip2",
+   "flags": [
+    "--sdclip2",
+    "--sdclipg"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify second safetensors Clip model (SD3 Clip-G). Leave blank if prebaked or unused."
+  },
+  {
+   "dest": "sdclipdevice",
+   "flags": [
+    "--sdclipdevice"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "sd_get_device_number",
+   "default": null,
+   "hidden": false,
+   "help": "CLIP / T5 / LLM device for image generation. GPU index, -1 or 'main' for the main GPU, or 'CPU' (default: {default_sdclipdevice})."
+  },
+  {
+   "dest": "sdconvdirect",
+   "flags": [
+    "--sdconvdirect"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "sd_convdirect_option",
+   "default": null,
+   "dynamic": true,
+   "choices": [
+    "off",
+    "vaeonly",
+    "full"
+   ],
+   "hidden": false,
+   "help": "Enables Conv2D Direct. May improve performance or reduce memory usage. Might crash if not supported by the backend. Can be 'off' (default) to disable, 'full' to turn it on for all operations, or 'vaeonly' to enable only for the VAE."
+  },
+  {
+   "dest": "sdflashattention",
+   "flags": [
+    "--sdflashattention"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables Flash Attention for image generation."
+  },
+  {
+   "dest": "sdlora",
+   "flags": [
+    "--sdlora"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": "sdparsergrouplora",
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": null,
+   "hidden": false,
+   "help": "Specify image generation LoRAs safetensors models to be applied. Multiple LoRAs are accepted."
+  },
+  {
+   "dest": "sdloramult",
+   "flags": [
+    "--sdloramult"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "float",
+   "default": [
+    1.0
+   ],
+   "hidden": false,
+   "help": "Multipliers for the image LoRA model to be applied."
+  },
+  {
+   "dest": "sdmaingpu",
+   "flags": [
+    "--sdmaingpu"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "sd_get_device_number",
+   "default": null,
+   "hidden": false,
+   "help": "If specified, Image Generation weights will be placed on the selected GPU index. GPU index, -1 or 'main' for the main GPU, or 'CPU' (default: 'main')"
+  },
+  {
+   "dest": "sdmodel",
+   "flags": [
+    "--sdmodel"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify an image generation safetensors or gguf model to enable image generation."
+  },
+  {
+   "dest": "sdoffloadcpu",
+   "flags": [
+    "--sdoffloadcpu"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Offload image weights in RAM to save VRAM, swap into VRAM when needed."
+  },
+  {
+   "dest": "sdphotomaker",
+   "flags": [
+    "--sdphotomaker"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "PhotoMaker is a model that allows face cloning. Specify a PhotoMaker safetensors model which will be applied replacing img2img. SDXL models only. Leave blank if unused."
+  },
+  {
+   "dest": "sdquant",
+   "flags": [
+    "--sdquant"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": "sdparsergrouplora",
+   "kind": "optional",
+   "type": "int",
+   "default": 0,
+   "const": 2,
+   "choices": [
+    0,
+    1,
+    2
+   ],
+   "hidden": false,
+   "help": "If specified, loads the model quantized to save memory. 0=off, 1=q8, 2=q4"
+  },
+  {
+   "dest": "sdllm",
+   "flags": [
+    "--sdllm"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify an image generation text encoder or LLM (.safetensors or .gguf). Leave blank if prebaked or unused."
+  },
+  {
+   "dest": "sdthreads",
+   "flags": [
+    "--sdthreads"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Use a different number of threads for image generation if specified. Otherwise, has the same value as --threads."
+  },
+  {
+   "dest": "sdtiledvae",
+   "flags": [
+    "--sdtiledvae"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 512,
+   "hidden": false,
+   "help": "Adjust the automatic VAE tiling trigger for images above this size. 0 disables vae tiling."
+  },
+  {
+   "dest": "sdupscaler",
+   "flags": [
+    "--sdupscaler"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "You can use ESRGAN as an upscaling model to resize images. Leave blank if unused."
+  },
+  {
+   "dest": "sdvae",
+   "flags": [
+    "--sdvae"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": "sdparsergroupvae",
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify an image generation safetensors VAE which replaces the one in the model."
+  },
+  {
+   "dest": "sdvaeauto",
+   "flags": [
+    "--sdvaeauto"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": "sdparsergroupvae",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Uses a built-in tiny VAE via TAE SD, which is very fast, and fixed bad VAEs."
+  },
+  {
+   "dest": "sdvaedevice",
+   "flags": [
+    "--sdvaedevice"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "sd_get_device_number",
+   "default": null,
+   "hidden": false,
+   "help": "VAE device for image generation. GPU index, -1 or 'main' for the main GPU, or 'CPU' (default: {default_sdvaedevice})."
+  },
+  {
+   "dest": "sdvramlimit",
+   "flags": [
+    "--sdvramlimit"
+   ],
+   "group": "Image Generation Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "If set, prevent VRAM usage from image gen from using more than this many MB."
+  },
+  {
+   "dest": "whispermodel",
+   "flags": [
+    "--whispermodel"
+   ],
+   "group": "Whisper Transcription Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a Whisper .bin model to enable Speech-To-Text transcription."
+  },
+  {
+   "dest": "ttsmodel",
+   "flags": [
+    "--ttsmodel"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify the TTS Text-To-Speech GGUF model."
+  },
+  {
+   "dest": "ttswavtokenizer",
+   "flags": [
+    "--ttswavtokenizer"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify the WavTokenizer GGUF model."
+  },
+  {
+   "dest": "ttsgpu",
+   "flags": [
+    "--ttsgpu"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Use the GPU for TTS."
+  },
+  {
+   "dest": "ttsmaxlen",
+   "flags": [
+    "--ttsmaxlen"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 4096,
+   "hidden": false,
+   "help": "Limit number of audio tokens generated with TTS."
+  },
+  {
+   "dest": "ttsthreads",
+   "flags": [
+    "--ttsthreads"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Use a different number of threads for TTS if specified. Otherwise, has the same value as --threads."
+  },
+  {
+   "dest": "ttsdir",
+   "flags": [
+    "--ttsdir"
+   ],
+   "group": "TTS Narration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select directory containing voices for voice cloning."
+  },
+  {
+   "dest": "musicllm",
+   "flags": [
+    "--musicllm"
+   ],
+   "group": "Music Gen Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select music LLM model (e.g acestep-5Hz-lm-0.6B)"
+  },
+  {
+   "dest": "musicembeddings",
+   "flags": [
+    "--musicembeddings"
+   ],
+   "group": "Music Gen Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select music embedding model (e.g Qwen3-Embedding-0.6B)"
+  },
+  {
+   "dest": "musicdiffusion",
+   "flags": [
+    "--musicdiffusion"
+   ],
+   "group": "Music Gen Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select music diffusion (DiT) model (e.g acestep-v15-turbo)"
+  },
+  {
+   "dest": "musicvae",
+   "flags": [
+    "--musicvae"
+   ],
+   "group": "Music Gen Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Select music VAE model"
+  },
+  {
+   "dest": "musiclowvram",
+   "flags": [
+    "--musiclowvram"
+   ],
+   "group": "Music Gen Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Unload music models when not in use"
+  },
+  {
+   "dest": "embeddingsmodel",
+   "flags": [
+    "--embeddingsmodel"
+   ],
+   "group": "Embeddings Model Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify an embeddings model to be loaded for generating embedding vectors."
+  },
+  {
+   "dest": "embeddingsmaxctx",
+   "flags": [
+    "--embeddingsmaxctx"
+   ],
+   "group": "Embeddings Model Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 4096,
+   "hidden": false,
+   "help": "Overrides the default maximum supported context of an embeddings model (defaults to trained context)."
+  },
+  {
+   "dest": "embeddingsgpu",
+   "flags": [
+    "--embeddingsgpu"
+   ],
+   "group": "Embeddings Model Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Attempts to offload layers of the embeddings model to GPU. Usually not needed."
+  },
+  {
+   "dest": "rpcmode",
+   "flags": [
+    "--rpcmode"
+   ],
+   "group": "RPC Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "disabled",
+   "choices": [
+    "disabled",
+    "connect",
+    "host"
+   ],
+   "hidden": false,
+   "help": "RPC allows GPUs to be shared over the network. connect=access a remote GPU, host=share your GPU"
+  },
+  {
+   "dest": "rpcport",
+   "flags": [
+    "--rpcport"
+   ],
+   "group": "RPC Commands",
+   "exclusive": "rpcgroupA",
+   "kind": "value",
+   "type": "int",
+   "default": 5551,
+   "hidden": false,
+   "help": "RPC host mode only. Port for RPC server to listen on (default: {default_rpc_port})."
+  },
+  {
+   "dest": "rpchost",
+   "flags": [
+    "--rpchost"
+   ],
+   "group": "RPC Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "0.0.0.0",
+   "hidden": false,
+   "help": "RPC host mode only. IP address for RPC server to listen on. Use 0.0.0.0 for all interfaces, 127.0.0.1 for localhost only."
+  },
+  {
+   "dest": "rpcdevice",
+   "flags": [
+    "--rpcdevice"
+   ],
+   "group": "RPC Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "RPC host mode only. Set specific devices to use for RPC server. Comma separated. Overrides normal RPC device choices."
+  },
+  {
+   "dest": "rpctargets",
+   "flags": [
+    "--rpctargets"
+   ],
+   "group": "RPC Commands",
+   "exclusive": "rpcgroupA",
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "RPC connect mode only. Specify a comma separated list of remote RPC endpoints to connect to e.g. 127.0.0.1:5551,127.0.0.1:5552"
+  },
+  {
+   "dest": "admin",
+   "flags": [
+    "--admin"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables admin mode, allowing you to unload and reload different configurations or models."
+  },
+  {
+   "dest": "adminpassword",
+   "flags": [
+    "--adminpassword"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "dynamic": true,
+   "hidden": false,
+   "help": "Require a password to access admin functions. You are strongly advised to use one for publically accessible instances! Can also be set with env var KCPP_ADMINPASSWORD"
+  },
+  {
+   "dest": "admindir",
+   "flags": [
+    "--admindir"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a directory to look for .kcpps configs in, which can be used to swap models."
+  },
+  {
+   "dest": "adminunloadtimeout",
+   "flags": [
+    "--adminunloadtimeout"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 0,
+   "hidden": false,
+   "help": "Set an idle timeout in seconds after which KoboldCpp will automatically unload the current model."
+  },
+  {
+   "dest": "admintextmodelsdir",
+   "flags": [
+    "--admintextmodelsdir"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Used with remote control config switching. By passing in this argument, models in the directory will by available for restarting operations."
+  },
+  {
+   "dest": "admindatadir",
+   "flags": [
+    "--admindatadir"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a directory to store user data in. By passing in this argument, users with the admin password will be able to save and load data from the server database."
+  },
+  {
+   "dest": "admindocsdir",
+   "flags": [
+    "--admindocsdir"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a directory containing text or PDF documents. When set, the directory is accessible read-only at /INTERNAL_READ_ONLY/Documents via filesystem API endpoints."
+  },
+  {
+   "dest": "adminallowhf",
+   "flags": [
+    "--adminallowhf"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enables downloading of HuggingFace models through the Lite UI."
+  },
+  {
+   "dest": "routermode",
+   "flags": [
+    "--routermode"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Router mode uses a reverse proxy router, allowing you to easily hotswap models and configs within a single request. Requires admin mode."
+  },
+  {
+   "dest": "reqtimeout",
+   "flags": [
+    "--reqtimeout"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "int",
+   "default": 600,
+   "hidden": false,
+   "help": "Timeout in seconds for HTTP requests."
+  },
+  {
+   "dest": "autoswapmode",
+   "flags": [
+    "--autoswapmode"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Autoswap mode builds on router mode to allow switching of model types within the same config automatically. Requires admin mode and router mode. All models desired must be defined within the same config."
+  },
+  {
+   "dest": "autoswapthreshold",
+   "flags": [
+    "--autoswapthreshold"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "min": 0,
+   "max": 1048576,
+   "kind": "value",
+   "type": "int",
+   "default": 256,
+   "hidden": false,
+   "help": "Keep model families at or below this combined file size resident in autoswap mode, in MB (default {default_autoswap_threshold}). Only one model family above the threshold is loaded at a time."
+  },
+  {
+   "dest": "baseconfig",
+   "flags": [
+    "--baseconfig"
+   ],
+   "group": "Administration Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Specify a base .kcpps config to apply, if no custom base config is selected during a model swap"
+  },
+  {
+   "dest": "autoswapmode_skiptextunload",
+   "flags": [
+    "--autoswapmode_skiptextunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of text models during autoswap."
+  },
+  {
+   "dest": "autoswapmode_skipsstunload",
+   "flags": [
+    "--autoswapmode_skipsstunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of SST models during autoswap."
+  },
+  {
+   "dest": "autoswapmode_skipttsunload",
+   "flags": [
+    "--autoswapmode_skipttsunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of TTS models during autoswap."
+  },
+  {
+   "dest": "autoswapmode_skipembedunload",
+   "flags": [
+    "--autoswapmode_skipembedunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of embedding models during autoswap."
+  },
+  {
+   "dest": "autoswapmode_skipmusicunload",
+   "flags": [
+    "--autoswapmode_skipmusicunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of music models during autoswap."
+  },
+  {
+   "dest": "autoswapmode_skipimageunload",
+   "flags": [
+    "--autoswapmode_skipimageunload"
+   ],
+   "group": "Autoswap Options (Admin Mode)",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Skip unloading of image models during autoswap."
+  },
+  {
+   "dest": "OpenLumara",
+   "flags": [
+    "--OpenLumara"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enable and launch the OpenLumara AI agent alongside KoboldCpp."
+  },
+  {
+   "dest": "OpenLumara_TemporaryMode",
+   "flags": [
+    "--OpenLumara_TemporaryMode"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": false,
+   "help": "Enable temporary mode for OpenLumara AI agent. This prevents writing through most of the tools to disk. This does not include shell commands."
+  },
+  {
+   "dest": "OpenLumara_configfile",
+   "flags": [
+    "--OpenLumara_configfile"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Path to the OpenLumara config YAML file. Generated with defaults if the file is absent."
+  },
+  {
+   "dest": "OpenLumara_datadir",
+   "flags": [
+    "--OpenLumara_datadir"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Overrides the data_dir field in the OpenLumara config."
+  },
+  {
+   "dest": "OpenLumara_sandboxfolder",
+   "flags": [
+    "--OpenLumara_sandboxfolder"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Overrides the sandbox_folder field in the OpenLumara config."
+  },
+  {
+   "dest": "OpenLumara_backuppath",
+   "flags": [
+    "--OpenLumara_backuppath"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Overrides the backup_path field in the OpenLumara auto_backup module."
+  },
+  {
+   "dest": "OpenLumara_apiurl",
+   "flags": [
+    "--OpenLumara_apiurl"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": "",
+   "hidden": false,
+   "help": "Overrides the API URL field in the OpenLumara config."
+  },
+  {
+   "dest": "OpenLumara_requirelogin",
+   "flags": [
+    "--OpenLumara_requirelogin"
+   ],
+   "group": "OpenLumara Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": true,
+   "hidden": false,
+   "help": "Require login for the OpenLumara WebUI (default: true). Default credentials are admin:admin, change these in the OpenLumara webui or config file after the first launch."
+  },
+  {
+   "dest": "hordeconfig",
+   "flags": [
+    "--hordeconfig"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": null,
+   "hidden": true
+  },
+  {
+   "dest": "sdconfig",
+   "flags": [
+    "--sdconfig"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "list",
+   "nargs": "+",
+   "type": "str",
+   "default": null,
+   "hidden": true
+  },
+  {
+   "dest": "noblas",
+   "flags": [
+    "--noblas"
+   ],
+   "group": "General",
+   "exclusive": "compatgroup",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "nommap",
+   "flags": [
+    "--nommap",
+    "--no-mmap"
+   ],
+   "group": "Advanced Commands",
+   "exclusive": "compatgroup3",
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "nopipelineparallel",
+   "flags": [
+    "--nopipelineparallel"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "pipelineparallel",
+   "flags": [
+    "--pipelineparallel"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "sdnotile",
+   "flags": [
+    "--sdnotile"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "sdt5xxl",
+   "flags": [
+    "--sdt5xxl"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "hidden": true
+  },
+  {
+   "dest": "sdvaecpu",
+   "flags": [
+    "--sdvaecpu"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "sdclipgpu",
+   "flags": [
+    "--sdclipgpu"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "forceversion",
+   "flags": [
+    "--forceversion"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "sdgendefaults",
+   "flags": [
+    "--sdgendefaults"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "flashattention",
+   "flags": [
+    "--flashattention",
+    "--flash-attn",
+    "-fa"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "useswa",
+   "flags": [
+    "--useswa"
+   ],
+   "group": "Deprecated Commands, DO NOT USE!",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "testmemory",
+   "flags": [
+    "--testmemory"
+   ],
+   "group": "Internal Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "run_bundled_agent",
+   "flags": [
+    "--run-bundled-agent",
+    "--run-agent"
+   ],
+   "group": "Internal Commands",
+   "exclusive": null,
+   "kind": "flag",
+   "type": "bool",
+   "default": false,
+   "hidden": true
+  },
+  {
+   "dest": "agent_base_url",
+   "flags": [
+    "--agent-base-url"
+   ],
+   "group": "Internal Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "hidden": true
+  },
+  {
+   "dest": "agent_api_key",
+   "flags": [
+    "--agent-api-key"
+   ],
+   "group": "Internal Commands",
+   "exclusive": null,
+   "kind": "value",
+   "type": "str",
+   "default": null,
+   "hidden": true
+  }
+ ]
+}
