@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "KoboldCpp Launcher",
+        "title": "KoboldCpp Peter's Launcher",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

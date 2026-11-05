@@ -12,7 +12,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
 import { openSources } from "./dialogs/sources";
 import { api, inTauri } from "./api";
-import { drawUpdBtn, openUpdate, refreshBinary } from "./dialogs/update";
+import { drawUpdBtn, openUpdate, refreshBinary, refreshSelf } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
 import { initDownloads } from "./downloads";
 import { renderAdvanced } from "./screens/advanced";
@@ -72,6 +72,7 @@ async function init() {
     S.useGpu = hw.gpus.map(() => true);
     render();
   }, (e) => toast(`Hardware detection failed: ${e}`));
+  if (S.settings?.checkUpdatesOnStart) refreshSelf();
   await refreshBinary(!!S.settings?.checkUpdatesOnStart);
   if (S.binary && !S.binary.present) toast("KoboldCpp is not installed yet. Use the button at the top to install it.");
   else if (S.update?.updateAvailable && S.update.latest) toast(`KoboldCpp ${S.update.latest.tag} is available. Use the button at the top to update.`);

@@ -1,6 +1,6 @@
 // App state. One mutable object; screens read it and call render() after changes.
 
-import type { BinaryStatus, HardwareInfo, Machine, PopularResult, ServerStatus, Settings, Source as ApiSource, Template, UpdateInfo } from "./api";
+import type { BinaryStatus, HardwareInfo, Machine, PopularResult, ServerStatus, Settings, Source as ApiSource, Template, UpdateInfo, LauncherUpdate } from "./api";
 import type { DlState } from "./downloads";
 
 export type Source = ApiSource;
@@ -37,6 +37,8 @@ export const S = {
   logs: [] as string[],
   binary: null as BinaryStatus | null,
   update: null as UpdateInfo | null,
+  /** This launcher's newest GitHub release (checked on start, like KoboldCpp). */
+  selfUpdate: null as LauncherUpdate | null,
   updateError: "",
   settings: null as Settings | null,
   hw: null as HardwareInfo | null,

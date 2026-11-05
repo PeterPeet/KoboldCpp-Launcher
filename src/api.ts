@@ -22,6 +22,7 @@ export interface HardwareInfo {
 export interface InstalledBinary { path: string; version: string | null; asset: string | null }
 export interface BinaryStatus { installed: InstalledBinary | null; present: boolean; asset: string | null }
 export interface ReleaseInfo { tag: string; publishedAt: string | null; url: string | null; notes: string; asset: string | null; size: number | null }
+export interface LauncherUpdate { current: string; latest: string | null; url: string | null; updateAvailable: boolean }
 export interface UpdateInfo { current: string | null; latest: ReleaseInfo | null; updateAvailable: boolean }
 export interface Progress { done: number; total: number | null; speed: number }
 export interface Settings {
@@ -160,6 +161,7 @@ export const api = {
       latest: { tag: "v1.124.2", publishedAt: "2026-10-31T12:00:00Z", url: "https://github.com/LostRuins/koboldcpp/releases/tag/v1.124.2", notes: "Release notes from GitHub appear here (sample text in the browser preview).", asset: "koboldcpp.exe", size: 622841516 },
       updateAvailable: mockSettings.binary?.version !== "v1.124.2",
     })),
+  launcherUpdate: () => call<LauncherUpdate>("launcher_update", {}, () => ({ current: "v0.1.0", latest: "v0.1.0", url: null, updateAvailable: false })),
   installBinary: (tag?: string) =>
     call<InstalledBinary>("install_binary", { tag: tag ?? null }, async () => {
       for (let p = 0; p <= 100; p += 10) {

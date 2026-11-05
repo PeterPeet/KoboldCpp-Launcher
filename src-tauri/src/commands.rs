@@ -204,6 +204,39 @@ pub async fn check_update(state: State<'_, AppState>) -> CmdResult<UpdateInfo> {
     Ok(UpdateInfo { current, latest, update_available })
 }
 
+/// Newest release of this launcher on GitHub (it doesn't update itself; the UI links to the page).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherUpdate {
+    pub current: String,
+    /// `None` when the repository has no published release yet.
+    pub latest: Option<String>,
+    pub url: Option<String>,
+    pub update_available: bool,
+}
+
+#[tauri::command]
+pub async fn launcher_update(state: State<'_, AppState>) -> CmdResult<LauncherUpdate> {
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let repo = env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/");
+    let resp = state
+        .http
+        .get(format!("https://api.github.com/repos/{repo}/releases/latest"))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(err)?;
+    if resp.status().as_u16() == 404 {
+        return Ok(LauncherUpdate { current, latest: None, url: None, update_available: false });
+    }
+    if !resp.status().is_success() {
+        return Err(format!("GitHub answered {}", resp.status()));
+    }
+    let r: Release = resp.json().await.map_err(err)?;
+    let update_available = binary::is_newer(&r.tag_name, &current);
+    Ok(LauncherUpdate { current, latest: Some(r.tag_name), url: r.html_url, update_available })
+}
+
 /// Download and install a release (newest by default). If KoboldCpp is running it is stopped
 /// for the swap and started again with the same settings.
 #[tauri::command]

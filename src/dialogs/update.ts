@@ -17,11 +17,35 @@ export function drawUpdBtn() {
     b.textContent = S.binary?.asset ? "Install KoboldCpp" : "KoboldCpp";
   } else if (S.update?.updateAvailable && S.update.latest) {
     b.className = "upd new";
-    b.textContent = `Update to ${S.update.latest.tag}`;
+    b.textContent = `KoboldCpp: Update to ${S.update.latest.tag}`;
   } else {
     b.className = "upd ok";
-    b.textContent = S.update ? "Up to date" : "Check for updates";
+    b.textContent = S.update ? "KoboldCpp: Up to date" : "KoboldCpp: Check for updates";
   }
+  drawSelfUpd();
+}
+
+/** This launcher's own status: it doesn't update itself, an update opens its release page. */
+const LAUNCHER_REPO = "https://github.com/PeterPeet/KoboldCpp-Launcher";
+
+function drawSelfUpd() {
+  const b = $("#selfUpd");
+  if (!b) return;
+  const u = S.selfUpdate;
+  const url = u?.updateAvailable && u.url ? u.url : `${LAUNCHER_REPO}/releases`;
+  b.className = u?.updateAvailable ? "upd new" : "upd ok";
+  b.textContent = !u ? "Peter's Launcher" : u.updateAvailable ? `Peter's Launcher: Update to ${u.latest}` : "Peter's Launcher: Up to date";
+  b.title = u ? `This launcher: ${u.current}${u.latest ? `, newest release ${u.latest}` : ", no release published yet"}. Opens the releases page.` : "Open the launcher's releases page";
+  b.onclick = () => import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url)).catch(() => window.open(url, "_blank", "noopener"));
+}
+
+export async function refreshSelf() {
+  try {
+    S.selfUpdate = await api.launcherUpdate();
+  } catch {
+    /* offline: the button just shows the name */
+  }
+  drawSelfUpd();
 }
 
 export async function refreshBinary(check: boolean) {

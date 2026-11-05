@@ -222,7 +222,8 @@ export function popularRow(m: PopularItem, showFamily = false) {
         m.mmproj ? opt(`vis-${m.id}`, "Vision", "Also download and load the vision file so the model can see images", getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })) : null,
         m.mtp ? opt(`mtp-${m.id}`, "MTP", "Use the model's MTP layers for faster answers (needs a bit more memory)", getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
       h("div", { class: "sub", title: m.measured ? "Measured by KoboldCpp on this computer" : "Estimated from this computer's memory bandwidth and the model size" },
-        [m.params, m.pick.quant, fmtBytes(m.pick.size), speedText(m.tps, m.measured)].filter(Boolean).join(" · ")),
+        // "Q4_0: 3.1 GB · Vision: 0.9 GB": what the download adds up to with the ticked options.
+        [m.params, `${m.pick.quant}: ${fmtBytes(m.pick.size)}`, m.mmproj && getOpts(m.id).vision ? `Vision: ${fmtBytes(m.mmproj[1])}` : "", speedText(m.tps, m.measured)].filter(Boolean).join(" · ")),
       h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
       S.dl[key] ? ctl : null),
     S.dl[key] ? null : ctl);

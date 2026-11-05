@@ -45,6 +45,7 @@ pub fn run() {
             command_line,
             binary_status,
             check_update,
+            launcher_update,
             install_binary,
             cancel_binary_install,
             set_binary_path,
