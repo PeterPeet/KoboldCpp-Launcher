@@ -522,7 +522,8 @@ mod tests {
     }
 
     fn wait_for(m: &ServerManager, want: impl Fn(&ServerStatus) -> bool) -> ServerStatus {
-        let end = Instant::now() + Duration::from_secs(20);
+        // Generous: Python can start slowly on busy CI machines.
+        let end = Instant::now() + Duration::from_secs(60);
         while Instant::now() < end {
             let s = m.status();
             if want(&s) {
@@ -564,9 +565,9 @@ mod tests {
         let cfg = dir.path().join("run.kcpps");
         std::fs::write(&cfg, "{}").unwrap();
         let m = ServerManager::default();
-        for _ in 0..2 {
+        for round in 0..2 {
             m.start(&bin, &cfg, dir.path(), port, Arc::new(|_| {})).unwrap();
-            assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port });
+            assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port }, "round {round}: {:?}", m.logs(8));
             m.stop(Duration::from_secs(5));
         }
         m.start(&bin, &cfg, dir.path(), port, Arc::new(|_| {})).unwrap();
@@ -582,11 +583,13 @@ mod tests {
             eprintln!("skipped: ps is not available here (sandbox)");
             return;
         }
+        // A program started from inside the folder, like KoboldCpp. A script would show up in ps
+        // as "/bin/sh <script>" (rightly not "from there"), and macOS kills copies of its own
+        // system programs, so: a symlink to sleep, which ps lists by the path it was started as.
         let bin = tempfile::tempdir().unwrap();
-        let script = bin.path().join("koboldcpp-test");
-        std::fs::write(&script, "#!/bin/sh\nsleep 30\n").unwrap();
-        crate::binary::make_executable(&script).unwrap();
-        let mut child = Command::new(&script).spawn().unwrap();
+        let prog = bin.path().join("koboldcpp-test");
+        std::os::unix::fs::symlink("/bin/sleep", &prog).unwrap();
+        let mut child = Command::new(&prog).arg("30").spawn().unwrap();
         std::thread::sleep(Duration::from_millis(300));
         let other = tempfile::tempdir().unwrap();
         assert_eq!(kill_orphans(other.path()), 0, "nothing from another folder");

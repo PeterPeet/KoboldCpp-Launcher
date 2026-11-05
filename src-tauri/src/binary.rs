@@ -159,6 +159,9 @@ pub async fn install(client: &reqwest::Client, release: &Release, asset: &str, b
 }
 
 pub fn make_executable(path: &Path) -> std::io::Result<()> {
+    // Windows: nothing to do (no execute bit, no quarantine flag).
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
