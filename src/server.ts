@@ -21,7 +21,7 @@ export function setStatus() {
   st.classList.toggle("bad", S.server.state === "failed");
   st.title = S.server.state === "failed" ? S.server.message : statusText(S.server, S.running);
   document.getElementById("statusText")!.textContent = statusText(S.server, S.running);
-  // Green "Open Lite" next to the status while a model is running.
+  // "Open Lite" pill next to the status while a model is running.
   const lite = document.getElementById("liteBtn");
   if (lite) {
     lite.hidden = S.server.state !== "running";

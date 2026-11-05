@@ -97,6 +97,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .status{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-2);padding:5px 10px;border:1px solid var(--line);border-radius:20px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--fg-3)}
 .status.on .dot{background:var(--ok)}
+/* "Open Lite" looks like the running status pill next to it. */
+.litebtn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:400;padding:5px 12px;border-radius:20px;background:transparent;color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.litebtn:hover,:root[data-theme="lite"] .litebtn:hover{background:var(--ok-soft)}
+:root[data-theme="lite"] .litebtn{background:transparent;color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
 .status.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
 h1{font-size:26px;line-height:1.2;margin:0;letter-spacing:-.02em;text-wrap:balance;font-weight:700}
 h2{font-size:17px;margin:0;font-weight:600;letter-spacing:-.01em}
