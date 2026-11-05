@@ -111,7 +111,8 @@ Open question: follow KoboldCpp or Esobold releases.
 ## Implementation (2026-11-05)
 
 - **Uncensored label:** the repo ID contains uncensored, abliterated, unfiltered, decensored,
-  orthogonalized, heretic or thedrummer (TheDrummer's models and others' quants of them), or has
+  orthogonalized, heretic or thedrummer (TheDrummer's models and others' quants of them), in the
+  repo ID or its base model, or has
   the word nsfw / erp on its own (so "enterprise" doesn't count), or the tag uncensored,
   not-for-all-audiences or nsfw.
 - **Default sources, version 2:** Gryphe, PocketDoc, Sao10K, zerofata, BeaverAI, LatitudeGames,

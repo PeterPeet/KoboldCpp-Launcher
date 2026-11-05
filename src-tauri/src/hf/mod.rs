@@ -206,10 +206,12 @@ pub fn is_text_model(e: &ModelEntry) -> bool {
 }
 
 pub fn is_uncensored(e: &ModelEntry) -> bool {
-    let id = e.id.to_ascii_lowercase();
-    UNCENSORED_WORDS.iter().any(|w| id.contains(w))
-        || id.split(|c: char| !c.is_ascii_alphanumeric()).any(|t| UNCENSORED_TOKENS.contains(&t))
-        || e.tags.iter().any(|t| t == "uncensored" || t == "not-for-all-audiences" || t == "nsfw")
+    // The repo and the model it's made from (a quant named "Rocinante-12B" of TheDrummer's model).
+    let named = |id: &str| {
+        let id = id.to_ascii_lowercase();
+        UNCENSORED_WORDS.iter().any(|w| id.contains(w)) || id.split(|c: char| !c.is_ascii_alphanumeric()).any(|t| UNCENSORED_TOKENS.contains(&t))
+    };
+    named(&e.id) || e.base_model().is_some_and(named) || e.tags.iter().any(|t| t == "uncensored" || t == "not-for-all-audiences" || t == "nsfw")
 }
 
 /// Day number since 1970-01-01 of an ISO 8601 date ("2026-08-13T08:28:40.000Z").
@@ -829,6 +831,9 @@ mod tests {
         for id in ["x/Enterprise-Assistant-7B-GGUF", "x/Interpreter-3B-GGUF", "Qwen/Qwen3-8B-GGUF", "x/Hyperparameter-Tuned-GGUF"] {
             assert!(!is_uncensored(&e(id)), "{id}");
         }
+        // A quant whose name doesn't say it, but whose base model is TheDrummer's.
+        let q: ModelEntry = serde_json::from_str(r#"{"id":"bartowski/Rocinante-12B-v1.1-GGUF","likes":1,"downloads":1,"tags":[],"baseModels":{"relation":"quantized","models":[{"id":"TheDrummer/Rocinante-12B-v1.1"}]}}"#).unwrap();
+        assert!(is_uncensored(&q));
     }
 
     #[test]
