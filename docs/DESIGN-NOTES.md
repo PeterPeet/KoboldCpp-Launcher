@@ -1,7 +1,7 @@
 # KoboldCpp Launcher: design notes
 
 Brainstorm and decisions from the first planning chat (2026-11-04), moved here from the
-KLITE-RPmod project. Nothing is built yet; this is the starting point.
+KLITE-RPmod project. See "Implementation" below for what has been built since.
 
 - **Clickable mockup:** [mockups/launcher/kobold-launcher.html](../mockups/launcher/kobold-launcher.html)
   (published privately at https://claude.ai/artifact/WGDP3KyHvzfKik8vvoe6MP)
@@ -107,6 +107,40 @@ Open question: follow KoboldCpp or Esobold releases.
 - One-click benchmark stored with each preset; "Speed here" shows estimate (grey) vs measured.
 - "Copy as command" everywhere; import existing `.kcpps`.
 - Optional neon "loadout" theme (models as RPG gear).
+
+## Implementation (2026-11-05)
+
+First full version built in six phases (commits on `main`). Decisions made on the way:
+
+- **Binary:** official KoboldCpp releases only (`LostRuins/koboldcpp`); Esobold may become a second
+  channel later. Asset per platform: `koboldcpp-mac-arm64`; `koboldcpp.exe` with NVIDIA, else
+  `koboldcpp-nocuda.exe`, `koboldcpp-oldpc.exe` without AVX2; Linux x64 the same pattern. Downloads
+  are checked against the SHA-256 digest GitHub publishes per asset. No build exists for Intel Macs.
+- **Option table** comes from upstream `koboldcpp.py` at the release tag (183 options in v1.124.2),
+  not from Esobold; extracted with `ast`, never executed.
+- **Sparse `.kcpps`:** KoboldCpp fills missing keys with defaults and migrates old ones on load, so
+  the launcher keeps every key it reads (also unknown ones) and only adds what the user changes.
+  Launch is always `koboldcpp --config <file> --skiplauncher`; a config without any model is refused
+  (KoboldCpp would open its own Tk window).
+- **Downloads by the launcher, not by KoboldCpp:** template URLs are downloaded first (progress,
+  resume, cancel), then replaced by local paths. `downloaddir` is set to the models folder as a
+  fallback.
+- **Fit:** local files use KoboldCpp's own layer estimate (`autoset_gpu_layers`); Hugging Face lists
+  use sizes only (weights + context overhead). Apple Silicon: Metal budget ≈ ⅔ of RAM (¾ above
+  36 GB), all or nothing. At launch `--gpulayers -1` (autofit) unless the user sets a number.
+- **Quant pick:** Q6_K → Q5_K_M → Q4_K_M (Q8_0 for models under 3 GB); then Q4_K_M partly on CPU;
+  then a smaller quant marked "Smaller quant". F16/BF16/Q5+ never count as fallback.
+- **Popular list** shows text and vision-chat models only (image/voice come from templates).
+  Uploader subfolders that are not quant names (`MTP/`, `dspark/`) are helpers and skipped.
+  "Labs" = trending repos whose author is the base model's author, combined with the official rule.
+- **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
+  library folders.
+- **LAN access:** the advanced page writes `host 127.0.0.1` when "Allow other devices" is off
+  (KoboldCpp's own default listens on all interfaces).
+
+Not done yet: measured speed per model ("Speed here" is an estimate), live dashboard, tray mode,
+model swap without restart, Esobold channel, Windows/Linux checks on real hardware (detection is
+tested on recorded tool output only), app icon.
 
 ## About the mockup
 

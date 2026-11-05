@@ -35,7 +35,13 @@ export async function launch(label: string, config: Kcpps) {
     S.server = { state: "starting", port };
   } catch (e) {
     S.running = null;
-    toast(String(e));
+    const msg = String(e);
+    if (msg.includes("not installed")) {
+      toast("Install KoboldCpp first. It only takes a minute.");
+      import("./dialogs/update").then((m) => m.openUpdate());
+    } else {
+      toast(msg);
+    }
   }
   setStatus();
   render();
