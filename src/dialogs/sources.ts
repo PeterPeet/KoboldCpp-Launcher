@@ -1,7 +1,47 @@
 // Sources dialog: APT-style list of Hugging Face uploaders with components and priority.
 
+import { api, inTauri } from "../api";
 import { $, checkbox, h, toggle, toast } from "../dom";
 import { S, render } from "../state";
+
+let saveTimer: number | undefined;
+/** Save the list (debounced) and refresh the popular list. */
+function persist() {
+  S.popularKey = "";
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(async () => {
+    if (!S.settings) return;
+    try {
+      S.settings = await api.saveSettings({ ...S.settings, sources: S.sources });
+    } catch (e) {
+      toast(`Could not save sources: ${e}`);
+    }
+  }, 300);
+}
+
+async function exportSources() {
+  if (!inTauri) return toast("Export works in the desktop app");
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: "sources.json", filters: [{ name: "Sources", extensions: ["json"] }] });
+  if (!path) return;
+  await api.exportSources(path).then(() => toast("Sources exported"), (e) => toast(String(e)));
+}
+
+async function importSources(redraw: () => void) {
+  if (!inTauri) return toast("Import works in the desktop app");
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const path = await open({ multiple: false, filters: [{ name: "Sources", extensions: ["json"] }] });
+  if (typeof path !== "string") return;
+  try {
+    S.sources = await api.importSources(path);
+    if (S.settings) S.settings.sources = S.sources;
+    S.popularKey = "";
+    redraw();
+    toast("Sources imported");
+  } catch (e) {
+    toast(String(e));
+  }
+}
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,95}$/;
 
@@ -9,6 +49,7 @@ export function openSources() {
   const root = $("#dialogRoot")!;
   let err = "";
   const close = () => { root.replaceChildren(); render(); };
+  const changed = () => { persist(); draw(); };
 
   const draw = () => {
     const list = h("div", { style: "border:1px solid var(--line);border-radius:12px" });
@@ -20,16 +61,16 @@ export function openSources() {
         const c = s.comps;
         mid.append(h("div", { class: "comps" },
           ...([["official", "Official"], ["finetune", "Finetunes"], ["unc", "Uncensored"]] as const).map(([k, l]) =>
-            h("label", { for: `c-${s.id}-${k}` }, checkbox(`c-${s.id}-${k}`, c[k], (v) => { c[k] = v; draw(); }, { disabled: !s.on }), l))));
+            h("label", { for: `c-${s.id}-${k}` }, checkbox(`c-${s.id}-${k}`, c[k], (v) => { c[k] = v; changed(); }, { disabled: !s.on }), l))));
       }
-      const swap = (j: number) => { [S.sources[i], S.sources[j]] = [S.sources[j], S.sources[i]]; draw(); };
+      const swap = (j: number) => { [S.sources[i], S.sources[j]] = [S.sources[j], S.sources[i]]; changed(); };
       const ord = h("div", { class: "ord" },
         h("button", { "aria-label": `Move ${s.name} up`, disabled: i === 0, onclick: () => swap(i - 1) }, "▲"),
         h("button", { "aria-label": `Move ${s.name} down`, disabled: i === S.sources.length - 1, onclick: () => swap(i + 1) }, "▼"));
       const right = h("div", { style: "display:flex;gap:8px;align-items:center" },
-        s.builtin ? null : h("button", { class: "ghost", "aria-label": `Remove ${s.name}`, onclick: () => { S.sources.splice(i, 1); draw(); } }, "Remove"),
+        s.builtin ? null : h("button", { class: "ghost", "aria-label": `Remove ${s.name}`, onclick: () => { S.sources.splice(i, 1); changed(); } }, "Remove"),
         ord);
-      list.append(h("div", { class: "src" }, toggle(`src-${s.id}`, s.on, (v) => { s.on = v; draw(); }), mid, right));
+      list.append(h("div", { class: "src" }, toggle(`src-${s.id}`, s.on, (v) => { s.on = v; changed(); }), mid, right));
     });
 
     const inp = h("input", { id: "newsrc", placeholder: "Hugging Face user or organization, e.g. bartowski", "aria-label": "New source" }) as HTMLInputElement;
@@ -39,7 +80,8 @@ export function openSources() {
       else if (!NAME_RE.test(v)) err = "Names use letters, numbers, dots, dashes and underscores.";
       else if (S.sources.some((s) => s.name.toLowerCase() === v.toLowerCase())) err = `${v} is already in the list.`;
       else {
-        S.sources.push({ id: v, name: v, desc: "Repo count appears once Hugging Face is connected", on: true, comps: { official: true, finetune: true, unc: false } });
+        S.sources.push({ id: v, name: v, builtin: false, desc: "Added by you", on: true, comps: { official: true, finetune: true, unc: false } });
+        persist();
         err = "";
         toast(`${v} added`);
       }
@@ -59,8 +101,8 @@ export function openSources() {
       h("div", { class: "addrow" }, inp, h("button", { onclick: add }, "Add source")),
       h("p", { class: "err", id: "srcErr", "aria-live": "polite" }, err),
       h("p", {}, "Share a setup: ",
-        h("button", { class: "linkbtn", onclick: () => toast("sources.json exported") }, "Export"), " · ",
-        h("button", { class: "linkbtn", onclick: () => toast("Pick a sources.json to import") }, "Import")));
+        h("button", { class: "linkbtn", onclick: exportSources }, "Export"), " · ",
+        h("button", { class: "linkbtn", onclick: () => importSources(draw) }, "Import")));
     const scrim = h("div", { class: "scrim", onclick: (e: Event) => { if (e.target === scrim) close(); } }, dlg);
     root.replaceChildren(scrim);
   };

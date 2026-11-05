@@ -1,12 +1,10 @@
 // App state. One mutable object; screens read it and call render() after changes.
 
-import type { BinaryStatus, HardwareInfo, ServerStatus, Settings, UpdateInfo } from "./api";
+import type { BinaryStatus, HardwareInfo, Machine, PopularResult, ServerStatus, Settings, Source as ApiSource, Template, UpdateInfo } from "./api";
+import type { DlState } from "./downloads";
 import { TIERS, type TierId } from "./data";
 
-export interface Source {
-  id: string; name: string; builtin?: boolean; desc: string; on: boolean;
-  comps: { official: boolean; finetune: boolean; unc: boolean } | null;
-}
+export type Source = ApiSource;
 
 export const S = {
   tier: "mid" as TierId,
@@ -16,13 +14,8 @@ export const S = {
   showAllTiers: false,
   running: null as string | null,
   downloads: {} as Record<string, { pct: number; size: number }>,
-  sources: [
-    { id: "kcppt", name: "KoboldCpp templates", builtin: true, desc: "Ready-made setups from hf.co/koboldcpp", on: true, comps: null },
-    { id: "labs", name: "Labs' own uploads", builtin: true, desc: "Repo author is the base model author", on: true, comps: { official: true, finetune: false, unc: false } },
-    { id: "unsloth", name: "unsloth", desc: "393 GGUF repos", on: true, comps: { official: true, finetune: false, unc: false } },
-    { id: "bartowski", name: "bartowski", desc: "1,000+ GGUF repos", on: false, comps: { official: true, finetune: true, unc: false } },
-    { id: "TheDrummer", name: "TheDrummer", desc: "106 GGUF repos", on: false, comps: { official: false, finetune: true, unc: false } },
-  ] as Source[],
+  /** Loaded from settings.json at start. */
+  sources: [] as Source[],
   lib: {
     tab: "local" as "local" | "discover",
     q: "",
@@ -51,6 +44,12 @@ export const S = {
   updateError: "",
   settings: null as Settings | null,
   hw: null as HardwareInfo | null,
+  dl: {} as Record<string, DlState>,
+  templates: null as Template[] | null,
+  templatesError: "",
+  popular: null as PopularResult | null,
+  popularKey: "",
+  popularError: "",
 };
 
 try {
@@ -69,8 +68,11 @@ export function saveTier() {
   }
 }
 
-/** Graphics memory of the ticked GPUs. */
-export const vram = () => TIERS[S.tier].gpus.reduce((a, g, i) => a + (S.useGpu[i] ? g.vram : 0), 0);
+/** Graphics memory of the ticked GPUs (bytes). */
+export const vram = () => (S.hw?.gpus ?? []).reduce((a, g, i) => a + (S.useGpu[i] !== false ? g.vram : 0), 0);
+
+/** What fit calculations need about this PC with the current GPU selection. */
+export const machine = (context = 16384): Machine => ({ vram: vram(), ram: S.hw?.ramTotal ?? 0, unified: !!S.hw?.unifiedMemory && vram() > 0, context });
 
 // Registered by main.ts so screens can trigger a redraw without import cycles.
 let renderFn = () => {};

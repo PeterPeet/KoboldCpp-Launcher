@@ -289,3 +289,212 @@ pub async fn server_perf(state: State<'_, AppState>) -> CmdResult<Value> {
     let r = state.http.get(format!("http://127.0.0.1:{port}/api/extra/perf")).timeout(Duration::from_secs(3)).send().await.map_err(err)?;
     r.json().await.map_err(err)
 }
+
+/* ---------- Hugging Face, templates, downloads ---------- */
+
+fn hf(state: &AppState) -> crate::hf::client::Hf<'_> {
+    crate::hf::client::Hf { http: &state.http, cache: state.dirs.cache() }
+}
+
+#[tauri::command]
+pub async fn templates(state: State<'_, AppState>) -> CmdResult<Vec<crate::hf::templates::Template>> {
+    Ok(crate::hf::templates::list(&hf(&state)).await)
+}
+
+/// Fit for many (size, context) pairs at once.
+#[tauri::command]
+pub fn fits(items: Vec<(u64, u32)>, vram: u64, ram: u64, unified: bool) -> Vec<fit::Fit> {
+    items.into_iter().map(|(size, ctx)| fit::fit_by_size(size, ctx, vram, ram, unified)).collect()
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Machine {
+    pub vram: u64,
+    pub ram: u64,
+    pub unified: bool,
+    pub context: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PopularItem {
+    #[serde(flatten)]
+    pub model: crate::hf::Ranked,
+    pub pick: fit::QuantPick,
+    /// Download URLs for the picked quant (several for split files).
+    pub urls: Vec<String>,
+    pub mmproj: Option<(String, u64)>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PopularResult {
+    pub items: Vec<PopularItem>,
+    pub too_big: usize,
+    pub dupes: usize,
+    /// Sources that could not be reached.
+    pub errors: Vec<String>,
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+#[tauri::command]
+pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::RankOptions, machine: Machine) -> CmdResult<PopularResult> {
+    let h = hf(&state);
+    let sources = state.settings().sources;
+    let mut entries = Vec::new();
+    let mut errors = Vec::new();
+    for s in sources.iter().filter(|s| s.on && s.comps.is_some()) {
+        let r = if s.id == "labs" { h.trending(100).await } else { h.by_author(&s.name, 40).await };
+        match r {
+            Ok(mut l) => entries.append(&mut l),
+            Err(e) => errors.push(format!("{}: {e}", s.name)),
+        }
+    }
+    let ranked = crate::hf::rank(&entries, &sources, options, now_unix());
+    let top: Vec<crate::hf::Ranked> = ranked.items.into_iter().take(24).collect();
+    let files = futures_util::future::join_all(top.iter().map(|m| h.files(&m.id))).await;
+    let mut items = Vec::new();
+    let mut too_big = 0;
+    for (m, f) in top.into_iter().zip(files) {
+        let Ok(f) = f else { continue };
+        let Some(pick) = fit::pick_quant(&f.sizes(), machine.context, machine.vram, machine.ram, machine.unified) else {
+            too_big += 1;
+            continue;
+        };
+        let Some(q) = f.quant(&pick.quant) else { continue };
+        let urls = q.files.iter().map(|p| crate::hf::resolve_url(&m.id, p)).collect();
+        let mmproj = f.best_mmproj().map(|(p, s)| (crate::hf::resolve_url(&m.id, p), *s));
+        items.push(PopularItem { model: m, pick, urls, mmproj });
+    }
+    Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors })
+}
+
+#[tauri::command]
+pub async fn search_models(state: State<'_, AppState>, query: String) -> CmdResult<Vec<crate::hf::Ranked>> {
+    let entries = hf(&state).search(&query, 50).await.map_err(err)?;
+    // Search shows everything that matches, from any uploader (no source filter).
+    let now = now_unix();
+    Ok(entries
+        .iter()
+        .map(|e| crate::hf::Ranked {
+            id: e.id.clone(),
+            name: crate::hf::display_name(e.repo_name()),
+            author: e.author().into(),
+            params: crate::hf::params_from_name(e.repo_name()),
+            official: crate::hf::is_official(e),
+            uncensored: crate::hf::is_uncensored(e),
+            likes: e.likes,
+            downloads: e.downloads,
+            age_days: crate::hf::age_days(e.created_at.as_deref(), now),
+            score: crate::hf::score(e, now),
+            source: 0,
+            base_model: e.base_model().map(str::to_string),
+            tags: e.tags.clone(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn repo_files(state: State<'_, AppState>, repo: String) -> CmdResult<crate::hf::RepoFiles> {
+    hf(&state).files(&repo).await.map_err(err)
+}
+
+#[derive(serde::Deserialize)]
+pub struct DlFile {
+    pub url: String,
+    pub size: Option<u64>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DlProgress {
+    pub id: String,
+    pub done: u64,
+    pub total: Option<u64>,
+    pub speed: u64,
+    pub file: String,
+}
+
+#[derive(Default)]
+pub struct Downloads(pub Mutex<std::collections::HashMap<String, Cancel>>);
+
+/// Download files into the models folder (split models: pass the first part, all parts follow).
+/// Returns url → local path for each requested URL. Progress: event `download-progress`.
+#[tauri::command]
+pub async fn download_files(app: AppHandle, state: State<'_, AppState>, downloads: State<'_, Downloads>, id: String, files: Vec<DlFile>) -> CmdResult<Vec<(String, String)>> {
+    let models = state.settings().models_dir(&state.dirs);
+    let cancel = Cancel::default();
+    downloads.0.lock().map_err(err)?.insert(id.clone(), cancel.clone());
+    // Expand split parts; sizes for extra parts come from HEAD.
+    let h = hf(&state);
+    let mut jobs: Vec<(String, String, Option<u64>)> = Vec::new(); // (requested url, part url, size)
+    for f in &files {
+        let parts = download::split_urls(&f.url);
+        let single = parts.len() == 1;
+        for p in parts {
+            let size = if single { f.size } else { h.size_of(&p).await };
+            jobs.push((f.url.clone(), p, size));
+        }
+    }
+    for j in &mut jobs {
+        if j.2.is_none() {
+            j.2 = h.size_of(&j.1).await;
+        }
+    }
+    let total: Option<u64> = jobs.iter().map(|j| j.2).sum();
+    let mut base = 0u64;
+    let mut out = Vec::new();
+    let result: CmdResult<()> = async {
+        for (req, url, size) in &jobs {
+            let name = download::file_name_from_url(url);
+            let dest = models.join(&name);
+            let (app2, id2, name2) = (app.clone(), id.clone(), name.clone());
+            let start = base;
+            let path = download::download(&state.http, download::Request { url, dest: &dest, size: *size, sha256: None }, &cancel, move |p| {
+                let _ = app2.emit("download-progress", DlProgress { id: id2.clone(), done: start + p.done, total, speed: p.speed, file: name2.clone() });
+            })
+            .await
+            .map_err(err)?;
+            base += size.unwrap_or_else(|| std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0));
+            if req == url || crate::gguf::split_part(&name).is_some_and(|(p, _)| p == 1) {
+                out.push((req.clone(), path.to_string_lossy().into_owned()));
+            }
+        }
+        Ok(())
+    }
+    .await;
+    downloads.0.lock().map_err(err)?.remove(&id);
+    result.map(|_| out)
+}
+
+#[tauri::command]
+pub fn cancel_download(downloads: State<'_, Downloads>, id: String) {
+    if let Some(c) = downloads.0.lock().unwrap().get(&id) {
+        c.cancel();
+    }
+}
+
+#[tauri::command]
+pub fn export_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
+    let json = serde_json::to_string_pretty(&state.settings().sources).map_err(err)?;
+    crate::store::write_atomic(&path, json.as_bytes()).map_err(err)
+}
+
+#[tauri::command]
+pub fn import_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Vec<crate::hf::Source>> {
+    let text = std::fs::read_to_string(&path).map_err(err)?;
+    let mut list: Vec<crate::hf::Source> = serde_json::from_str(&text).map_err(|e| format!("Not a sources file: {e}"))?;
+    list.retain(|s| s.builtin || crate::hf::valid_source_name(&s.name));
+    // Built-in sources always exist exactly once.
+    for d in crate::hf::default_sources().into_iter().filter(|d| d.builtin) {
+        if !list.iter().any(|s| s.id == d.id) {
+            list.insert(0, d);
+        }
+    }
+    let saved = state.update_settings(|s| s.sources = list)?;
+    Ok(saved.sources)
+}

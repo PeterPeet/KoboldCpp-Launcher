@@ -50,11 +50,20 @@ pub struct Settings {
     pub models_dir: Option<PathBuf>,
     /// Extra folders the library scans for .gguf files.
     pub library_folders: Vec<PathBuf>,
+    /// Hugging Face sources, highest priority first.
+    pub sources: Vec<crate::hf::Source>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { binary: None, check_updates_on_start: true, include_prereleases: false, models_dir: None, library_folders: vec![] }
+        Self {
+            binary: None,
+            check_updates_on_start: true,
+            include_prereleases: false,
+            models_dir: None,
+            library_folders: vec![],
+            sources: crate::hf::default_sources(),
+        }
     }
 }
 

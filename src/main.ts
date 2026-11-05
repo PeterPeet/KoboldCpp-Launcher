@@ -12,6 +12,7 @@ import { openSources } from "./dialogs/sources";
 import { api } from "./api";
 import { drawUpdBtn, openUpdate, refreshBinary } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
+import { initDownloads } from "./downloads";
 import { renderAdvanced } from "./screens/advanced";
 import { renderLibrary } from "./screens/library";
 import { renderStart } from "./screens/start";
@@ -54,13 +55,20 @@ $("#openSources")!.addEventListener("click", openSources);
 $("#updBtn")!.addEventListener("click", openUpdate);
 drawUpdBtn();
 initServer();
+initDownloads();
 
 async function init() {
   try {
     S.settings = await api.settings();
+    S.sources = S.settings.sources;
   } catch {
     /* defaults */
   }
+  api.hardware().then((hw) => {
+    S.hw = hw;
+    S.useGpu = hw.gpus.map(() => true);
+    render();
+  }, (e) => toast(`Hardware detection failed: ${e}`));
   await refreshBinary(!!S.settings?.checkUpdatesOnStart);
   if (S.binary && !S.binary.present) toast("KoboldCpp is not installed yet. Use the button at the top to install it.");
   else if (S.update?.updateAvailable && S.update.latest) toast(`KoboldCpp ${S.update.latest.tag} is available. Use the button at the top to update.`);

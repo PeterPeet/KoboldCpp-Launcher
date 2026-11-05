@@ -5,6 +5,7 @@ pub mod download;
 pub mod fit;
 pub mod gguf;
 pub mod hardware;
+pub mod hf;
 pub mod server;
 pub mod store;
 
@@ -15,9 +16,11 @@ pub fn run() {
     use commands::*;
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             app.manage(AppState::new(dir));
+            app.manage(commands::Downloads::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -38,6 +41,15 @@ pub fn run() {
             server_status,
             server_logs,
             server_perf,
+            templates,
+            fits,
+            popular_models,
+            search_models,
+            repo_files,
+            download_files,
+            cancel_download,
+            export_sources,
+            import_sources,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -214,7 +214,12 @@ pub fn pick_quant(quants: &[(String, u64)], context: u32, vram: u64, ram: u64, u
         return Some(mk("Q4_K_M", s, Fit::Partial, false));
     }
     // Fallback: anything smaller that fits at all, largest first.
-    let mut rest: Vec<&(String, u64)> = quants.iter().filter(|(n, _)| !PREFERRED.iter().any(|p| n.eq_ignore_ascii_case(p))).collect();
+    // Only quants smaller than Q4_K_M count as fallback (never F16/BF16 or Q5+).
+    let smaller = |n: &str| {
+        let u = n.to_ascii_uppercase();
+        !(u.contains("F16") || u.contains("F32") || u.starts_with("Q5") || u.starts_with("Q6") || u.starts_with("Q8") || PREFERRED.contains(&u.as_str()))
+    };
+    let mut rest: Vec<&(String, u64)> = quants.iter().filter(|(n, _)| smaller(n)).collect();
     rest.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
     rest.into_iter().find(|(_, s)| fit(*s) != Fit::None).map(|(n, s)| mk(n, *s, fit(*s), true))
 }
@@ -290,6 +295,8 @@ mod tests {
         let p = pick_quant(&q(&[("Q4_K_M", 118.0), ("Q2_K", 64.0)]), 16384, 24 * G, 128 * G, false).unwrap();
         assert_eq!((p.quant.as_str(), p.fit, p.fallback), ("Q2_K", Fit::Partial, true));
         assert!(pick_quant(&q(&[("Q4_K_M", 118.0)]), 16384, 8 * G, 16 * G, false).is_none());
+        // A small BF16 helper is never a fallback for a huge model.
+        assert!(pick_quant(&q(&[("Q4_K_M", 118.0), ("BF16", 7.9)]), 16384, 8 * G, 16 * G, false).is_none());
     }
 
     #[test]
