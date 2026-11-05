@@ -4,6 +4,7 @@ import { api, fmtBytes, on, type DlProgress, type Kcpps } from "./api";
 import { h, toast } from "./dom";
 import { launch, stop } from "./server";
 import { S, render } from "./state";
+import { invalidateLibrary } from "./screens/library";
 
 export interface DlState { done: number; total: number | null; speed: number; file: string }
 
@@ -35,6 +36,7 @@ export async function getAndStart(key: string, label: string, files: { url: stri
       cfg[k] = typeof v === "string" && map.has(v) ? map.get(v)! : Array.isArray(v) ? v.map((x) => (typeof x === "string" && map.has(x) ? map.get(x)! : x)) : v;
     }
     delete S.dl[key];
+    invalidateLibrary();
     if (S.running) await stop();
     await launch(label, cfg);
   } catch (e) {

@@ -255,3 +255,19 @@ mod tests {
         assert!(dest.join("big-00002-of-00002.gguf").exists() && !big.path.exists());
     }
 }
+
+#[cfg(test)]
+mod real_folder {
+    /// `KL_MODELS=/path cargo test --lib real_folder -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn scan_real_folder() {
+        let p = std::path::PathBuf::from(std::env::var("KL_MODELS").expect("set KL_MODELS"));
+        let (models, drives) = super::scan(&[p], &Default::default());
+        for m in &models {
+            println!("{:?} {} {:?} {} layers={:?} mmproj={:?}", m.kind, m.file, m.quant, m.size, m.layers, m.mmproj);
+        }
+        println!("drives: {drives:?}");
+        assert!(!models.is_empty());
+    }
+}

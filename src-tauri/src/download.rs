@@ -60,6 +60,19 @@ pub fn file_name_from_url(url: &str) -> String {
     path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("download").to_string()
 }
 
+/// Folder for a download inside the models folder: `<owner>/<repo>` for Hugging Face links, so a
+/// model and its vision file stay together and same-named files from different repos can't clash.
+pub fn repo_subdir(url: &str) -> PathBuf {
+    let rest = url.split_once("huggingface.co/").map(|(_, r)| r).unwrap_or("");
+    let mut parts = rest.split('/');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(owner), Some(repo), Some("resolve" | "blob")) if !owner.is_empty() && !repo.is_empty() && !owner.contains("..") && !repo.contains("..") => {
+            PathBuf::from(owner).join(repo)
+        }
+        _ => PathBuf::new(),
+    }
+}
+
 pub fn part_path(dest: &Path) -> PathBuf {
     let mut s = dest.as_os_str().to_owned();
     s.push(".part");
@@ -228,6 +241,14 @@ mod tests {
         let p = dir.path().join("abc");
         std::fs::write(&p, b"abc").unwrap();
         assert_eq!(sha256_file(&p).unwrap(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn repo_folders() {
+        assert_eq!(repo_subdir("https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf"), PathBuf::from("unsloth/Qwen3.5-0.8B-GGUF"));
+        assert_eq!(repo_subdir("https://huggingface.co/koboldcpp/tts/resolve/main/Kokoro.gguf"), PathBuf::from("koboldcpp/tts"));
+        assert_eq!(repo_subdir("https://example.com/x.gguf"), PathBuf::new());
+        assert_eq!(repo_subdir("https://huggingface.co/../x/resolve/main/a.gguf"), PathBuf::new());
     }
 
     #[test]

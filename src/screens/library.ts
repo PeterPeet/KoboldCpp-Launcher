@@ -17,6 +17,12 @@ let fitKey = "";
 let search: { q: string; results: SearchHit[] | null; error: string; open: string | null; files: RepoFiles | null; seq: number } = { q: "", results: null, error: "", open: null, files: null, seq: 0 };
 let searchTimer: number | undefined;
 
+/** Forget the last scan; the next visit (or render while visible) scans again. */
+export function invalidateLibrary() {
+  view = null;
+  fitKey = "";
+}
+
 export async function reloadLibrary() {
   loading = true;
   try {
@@ -107,7 +113,7 @@ export function renderLibrary() {
   if (view && L.tab === "local") {
     const models = view.models.filter((m) => m.kind !== "Projector");
     const facet = (title: string, key: "types" | "fams", items: [string, string, number, Kid?][]) => {
-      const box = h("div", { style: "display:grid;gap:2px" }, h("h3", { style: "margin-bottom:6px" }, title));
+      const box = h("div", { style: "display:grid;grid-template-columns:minmax(0,1fr);gap:2px" }, h("h3", { style: "margin-bottom:6px" }, title));
       for (const [val, label, n, badge] of items) {
         const id = `f-${key}-${val}`;
         box.append(h("label", { class: "chk", for: id }, badge, label, h("span", { class: "n" }, n),
@@ -119,7 +125,7 @@ export function renderLibrary() {
     const fams = [...new Set(models.map(family))].sort();
     side.append(facet("Family", "fams", fams.map((f) => [f, f, models.filter((m) => family(m) === f).length, h("span", { class: `mono-badge fam-${famClass({ name: f })}` }, f.slice(0, 2))])));
 
-    const dbox = h("div", { style: "display:grid;gap:6px" }, h("h3", {}, "Drive"));
+    const dbox = h("div", { style: "display:grid;grid-template-columns:minmax(0,1fr);gap:6px" }, h("h3", {}, "Drive"));
     for (const d of view.drives) {
       const used = models.filter((m) => m.drive === d.mount).reduce((a, m) => a + m.size, 0);
       const pct = 100 - (d.free / d.total) * 100;
@@ -132,7 +138,7 @@ export function renderLibrary() {
     }
     side.append(dbox);
 
-    const fbox = h("div", { style: "display:grid;gap:4px" }, h("h3", { style: "margin-bottom:4px" }, "Folders"));
+    const fbox = h("div", { style: "display:grid;grid-template-columns:minmax(0,1fr);gap:4px" }, h("h3", { style: "margin-bottom:4px" }, "Folders"));
     for (const f of view.folders) {
       const own = f === view.modelsDir;
       fbox.append(h("div", { class: "folder", title: f },

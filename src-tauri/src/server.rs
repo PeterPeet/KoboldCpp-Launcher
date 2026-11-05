@@ -67,6 +67,59 @@ pub fn port_free(port: u16) -> bool {
     TcpListener::bind(("0.0.0.0", port)).is_ok() && TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
+/// SIGTERM (or SIGKILL with `force`) to the process group started for KoboldCpp.
+fn signal_group(pid: u32, force: bool) {
+    #[cfg(unix)]
+    unsafe {
+        let sig = if force { libc::SIGKILL } else { libc::SIGTERM };
+        if libc::kill(-(pid as libc::pid_t), sig) != 0 {
+            libc::kill(pid as libc::pid_t, sig);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (pid, force);
+}
+
+/// A KoboldCpp started from `bin_dir` that still listens on `port` but that we no longer track
+/// (left over from a crash or an earlier launcher run): stop it so the port is free again.
+/// Programs from anywhere else are never touched. Returns true if something was stopped.
+pub fn reclaim_port(port: u16, bin_dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        let out = |cmd: &str, args: &[&str]| Command::new(cmd).args(args).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        let bin = bin_dir.to_string_lossy().into_owned();
+        let mut stopped = false;
+        for pid in out("lsof", &["-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"]).lines().filter_map(|l| l.trim().parse::<i32>().ok()) {
+            // The listening process is KoboldCpp's Python child; its parent is the program we ran.
+            let ppid = out("ps", &["-o", "ppid=", "-p", &pid.to_string()]).trim().parse::<i32>().unwrap_or(0);
+            let ours = [pid, ppid].iter().any(|p| *p > 1 && out("ps", &["-o", "command=", "-p", &p.to_string()]).contains(&bin));
+            if ours {
+                for p in [pid, ppid].into_iter().filter(|p| *p > 1) {
+                    unsafe { libc::kill(p, libc::SIGTERM) };
+                }
+                stopped = true;
+            }
+        }
+        if stopped {
+            let end = Instant::now() + Duration::from_secs(8);
+            while !port_free(port) && Instant::now() < end {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+        stopped
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (port, bin_dir);
+        false
+    }
+}
+
+/// Progress lines KoboldCpp rewrites in place; only the latest is kept.
+fn is_progress(line: &str) -> bool {
+    line.starts_with("Generating (") || line.starts_with("Processing Prompt") || line.starts_with("Processing (")
+}
+
 /// Minimal blocking GET to the local server; returns the body on HTTP 200.
 pub fn local_get(port: u16, path: &str, timeout: Duration) -> Option<String> {
     let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), timeout).ok()?;
@@ -122,6 +175,13 @@ impl ServerManager {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         }
+        // Own process group: the PyInstaller program runs KoboldCpp as a child process, and
+        // stopping must reach both.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         let mut child = cmd.spawn().map_err(ServerError::Spawn)?;
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         // Everything KoboldCpp prints also goes to <config>.log (e.g. runs/last-run.log).
@@ -163,7 +223,9 @@ impl ServerManager {
                     if line.is_empty() {
                         continue;
                     }
-                    if let Some(f) = &log_file
+                    let progress = is_progress(&line);
+                    if !progress
+                        && let Some(f) = &log_file
                         && let Ok(mut f) = f.lock()
                     {
                         let _ = writeln!(f, "{line}");
@@ -172,6 +234,9 @@ impl ServerManager {
                         let mut g = inner.lock().unwrap();
                         if g.run != run {
                             return;
+                        }
+                        if progress && g.logs.back().is_some_and(|l| is_progress(l)) {
+                            g.logs.pop_back();
                         }
                         g.logs.push_back(line.clone());
                         while g.logs.len() > MAX_LOG_LINES {
@@ -214,7 +279,14 @@ impl ServerManager {
                         let why = if ready { "KoboldCpp stopped unexpectedly" } else { "KoboldCpp could not start" };
                         ServerStatus::Failed { message: format!("{why} ({code}). {}", tail.join(" / ")) }
                     };
-                    inner.lock().unwrap().child = None;
+                    {
+                        // Only clear our own run: a new run may have started meanwhile.
+                        let mut g = inner.lock().unwrap();
+                        if g.run != run {
+                            return;
+                        }
+                        g.child = None;
+                    }
                     Self::set_status(&inner, run, status, &notify);
                     return;
                 }
@@ -238,12 +310,7 @@ impl ServerManager {
             g.child.as_ref().map(Child::id)
         };
         let Some(pid) = pid else { return };
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
-        }
-        #[cfg(not(unix))]
-        let _ = pid;
+        signal_group(pid, false);
         let deadline = Instant::now() + grace;
         loop {
             let done = {
@@ -252,6 +319,7 @@ impl ServerManager {
                     None => true,
                     Some(c) => {
                         if cfg!(not(unix)) || Instant::now() >= deadline {
+                            signal_group(pid, true);
                             let _ = c.kill();
                             let _ = c.wait();
                             true
@@ -328,6 +396,33 @@ mod tests {
         assert_eq!(m.status(), ServerStatus::Stopped);
         assert!(events.load(Ordering::SeqCst) >= 3);
         assert!(port_free(port));
+    }
+
+    /// Regression: the old run's watcher must not drop the new run's process.
+    #[test]
+    fn restart_right_after_stop_keeps_new_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = free_port();
+        let bin = fake_binary(dir.path(), port);
+        let cfg = dir.path().join("run.kcpps");
+        std::fs::write(&cfg, "{}").unwrap();
+        let m = ServerManager::default();
+        for _ in 0..2 {
+            m.start(&bin, &cfg, dir.path(), port, Arc::new(|_| {})).unwrap();
+            assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port });
+            m.stop(Duration::from_secs(5));
+        }
+        m.start(&bin, &cfg, dir.path(), port, Arc::new(|_| {})).unwrap();
+        std::thread::sleep(Duration::from_millis(1500));
+        assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port }, "{:?}", m.logs(5));
+        m.stop(Duration::from_secs(5));
+        assert!(port_free(port));
+    }
+
+    #[test]
+    fn progress_lines_collapse() {
+        assert!(is_progress("Generating (12 / 2048 tokens)"));
+        assert!(!is_progress("Load Text Model OK: True"));
     }
 
     #[test]

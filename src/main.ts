@@ -14,7 +14,7 @@ import { drawUpdBtn, openUpdate, refreshBinary } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
 import { initDownloads } from "./downloads";
 import { renderAdvanced } from "./screens/advanced";
-import { renderLibrary } from "./screens/library";
+import { invalidateLibrary, renderLibrary } from "./screens/library";
 import { renderStart } from "./screens/start";
 import { S, setRender } from "./state";
 
@@ -77,5 +77,9 @@ async function init() {
 }
 init();
 
-addEventListener("hashchange", render);
+addEventListener("hashchange", () => {
+  // Fresh scan whenever the library is opened (downloads, moves, files added outside).
+  if (route() === "library") invalidateLibrary();
+  render();
+});
 render();

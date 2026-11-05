@@ -288,6 +288,9 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     }
     let path = state.dirs.runs().join("last-run.kcpps");
     cfg.save(&path).map_err(err)?;
+    if !crate::server::port_free(port) {
+        crate::server::reclaim_port(port, &state.dirs.bin());
+    }
     let app2 = app.clone();
     state
         .server
@@ -567,7 +570,7 @@ pub async fn download_files(app: AppHandle, state: State<'_, AppState>, download
     let result: CmdResult<()> = async {
         for (req, url, size) in &jobs {
             let name = download::file_name_from_url(url);
-            let dest = models.join(&name);
+            let dest = models.join(download::repo_subdir(url)).join(&name);
             let (app2, id2, name2) = (app.clone(), id.clone(), name.clone());
             let start = base;
             let path = download::download_retry(&state.http, download::Request { url, dest: &dest, size: *size, sha256: None }, &cancel, move |p| {
