@@ -54,29 +54,61 @@ const ago = (t: number | null) => {
 };
 
 async function pickFolder(): Promise<string | null> {
-  if (!inTauri) { toast("Folders can be picked in the desktop app"); return null; }
+  // Browser preview: a sample path (a typical wrong pick, one level too deep).
+  if (!inTauri) return "/Users/you/.lmstudio/models/lmstudio-community/Qwen3.5-4B-GGUF";
   const { open } = await import("@tauri-apps/plugin-dialog");
   const p = await open({ directory: true, multiple: false });
   return typeof p === "string" ? p : null;
 }
 
-/** Add-folder dialog: pick a folder, choose whether subfolders are searched too. */
+/** Parent of a path ("/a/b/c/" → "/a/b"), or null at the top. */
+function parentOf(path: string): string | null {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return i > 0 ? trimmed.slice(0, i) : null;
+}
+
+/** Add-folder dialog: pick a folder, choose whether subfolders are searched too, see what it finds. */
 function addFolder() {
   const root = $("#dialogRoot")!;
   let path = "";
   let recursive = true;
+  let found: { models: number; folders: number } | null = null;
+  let seq = 0;
   const close = () => root.replaceChildren();
-  const draw = () => {
-    const pathBox = h("div", { class: "pathbox mono", title: path }, path || "No folder chosen");
-    const dlg = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "addTitle", style: "width:min(520px,100%)" },
+
+  const check = async () => {
+    found = null;
+    draw();
+    if (!path) return;
+    const mine = ++seq;
+    try {
+      const r = await api.previewFolder(path, recursive);
+      if (mine === seq) { found = r; draw(); }
+    } catch { /* leave empty */ }
+  };
+
+  function draw() {
+    const up = path ? parentOf(path) : null;
+    const summary = !path ? null
+      : found === null ? h("p", { class: "note", style: "margin:0" }, "Looking for models…")
+      : found.models === 0
+        ? h("p", { class: "err", style: "margin:0" }, recursive
+            ? "No .gguf models in this folder or its subfolders. Maybe one level up?"
+            : "No .gguf models directly in this folder. Turn on “Add recursively” or go one level up.")
+        : h("p", { class: "ok-note" }, `${found.models} model${found.models > 1 ? "s" : ""}` + (found.folders > 1 ? ` in ${found.folders} folders` : "") + " found.");
+    const dlg = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "addTitle", style: "width:min(560px,100%)" },
       h("div", {},
         h("h2", { id: "addTitle" }, "Add folder"),
         h("p", {}, "The library shows every .gguf model in this folder. Models stay where they are.")),
-      h("div", { style: "display:flex;gap:8px;align-items:center" },
-        pathBox,
-        h("button", { onclick: async () => { const p = await pickFolder(); if (p) { path = p; draw(); } } }, path ? "Change…" : "Choose folder…")),
+      // The full path, wrapped over several lines; the buttons get their own row below it.
+      h("div", { class: "pathbox mono" }, path || "No folder chosen"),
+      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+        h("button", { onclick: async () => { const p = await pickFolder(); if (p) { path = p; check(); } } }, path ? "Choose another…" : "Choose folder…"),
+        path ? h("button", { disabled: !up, title: up ?? "", onclick: () => { if (up) { path = up; check(); } } }, "↑ One level up") : null),
+      summary,
       h("label", { class: "chk", for: "addRecursive", style: "font-size:14px" },
-        checkbox("addRecursive", recursive, (v) => { recursive = v; }),
+        checkbox("addRecursive", recursive, (v) => { recursive = v; check(); }),
         "Add recursively from the folder"),
       h("p", { class: "note", style: "margin:-6px 0 0 23px" }, "Also search all subfolders, e.g. LM Studio's models folder, which keeps each model in its own folder."),
       h("div", { class: "btns" },
@@ -93,7 +125,7 @@ function addFolder() {
         } }, "Add folder")));
     const scrim = h("div", { class: "scrim", onclick: (e: Event) => { if (e.target === scrim) close(); } }, dlg);
     root.replaceChildren(scrim);
-  };
+  }
   draw();
 }
 

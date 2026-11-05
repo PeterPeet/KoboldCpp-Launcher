@@ -160,7 +160,8 @@ pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(-
 .folder{display:flex;min-width:0;justify-content:space-between;gap:8px;font-size:12px;color:var(--fg-2);align-items:center}
 .folder .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;direction:rtl;text-align:left}
 .folder .n{color:var(--fg-3);font-size:11.5px}
-.pathbox{flex:1;min-width:0;border:1px solid var(--line-2);border-radius:8px;padding:6px 10px;font-size:12.5px;color:var(--fg-2);background:var(--panel);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.pathbox{border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.5;color:var(--fg);background:var(--panel);white-space:normal;overflow-wrap:anywhere;word-break:break-all}
+.ok-note{margin:0;font-size:13px;color:var(--ok)}
 .quants{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .qrow{display:grid;grid-template-columns:minmax(110px,auto) 1fr auto;gap:10px;align-items:center;font-size:13px}
 .qrow .prog{grid-column:1/-1}
@@ -189,7 +190,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .btns{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 /* sources dialog */
 .scrim{position:fixed;inset:0;background:rgba(10,14,25,.45);display:grid;place-items:center;padding:16px;z-index:20}
-.dialog{background:var(--win);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);width:min(720px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:14px;padding:20px}
+.dialog{background:var(--win);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);width:min(720px,100%);max-height:calc(100vh - 32px);overflow-x:hidden;overflow-y:auto;display:grid;gap:14px;padding:20px}
 .dialog p{margin:0;font-size:13px;color:var(--fg-2)}
 .src{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line)}
 .src:first-child{border-top:none}

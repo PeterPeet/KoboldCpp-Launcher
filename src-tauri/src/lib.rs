@@ -65,6 +65,7 @@ pub fn run() {
             import_sources,
             library_scan,
             add_library_folder,
+            preview_folder,
             remove_library_folder,
             move_model,
             trash_model,

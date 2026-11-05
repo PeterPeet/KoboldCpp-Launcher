@@ -117,6 +117,29 @@ fn walk(dir: &Path, depth: u32, seen: &mut std::collections::HashSet<PathBuf>, o
     }
 }
 
+/// What a folder would add, for the add-folder dialog: model files (vision files and extra split
+/// parts not counted) and in how many different folders they sit.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderPreview {
+    pub models: usize,
+    pub folders: usize,
+}
+
+pub fn preview(dir: &Path, recursive: bool) -> FolderPreview {
+    let mut files = Vec::new();
+    walk(dir, if recursive { MAX_DEPTH } else { 0 }, &mut Default::default(), &mut files);
+    let models: Vec<&PathBuf> = files
+        .iter()
+        .filter(|p| {
+            let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+            !n.contains("mmproj") && gguf::split_part(&n).is_none_or(|(part, _)| part == 1)
+        })
+        .collect();
+    let folders: std::collections::HashSet<&Path> = models.iter().filter_map(|p| p.parent()).collect();
+    FolderPreview { models: models.len(), folders: folders.len() }
+}
+
 /// Deepest subfolder level a recursive folder is searched to.
 pub const MAX_DEPTH: u32 = 32;
 
@@ -256,6 +279,17 @@ mod tests {
         std::os::unix::fs::symlink(d.path().join("lib"), lib.join("loop")).unwrap();
         let (again, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new());
         assert_eq!(again.len(), 1);
+    }
+
+    #[test]
+    fn folder_preview_counts_models_not_helpers() {
+        let d = tempfile::tempdir().unwrap();
+        for (dir, file) in [("a", "m-Q4_K_M.gguf"), ("a", "mmproj-F16.gguf"), ("b", "big-00001-of-00002.gguf"), ("b", "big-00002-of-00002.gguf")] {
+            std::fs::create_dir_all(d.path().join(dir)).unwrap();
+            std::fs::write(d.path().join(dir).join(file), b"GGUF").unwrap();
+        }
+        assert_eq!(preview(d.path(), true), FolderPreview { models: 2, folders: 2 });
+        assert_eq!(preview(d.path(), false), FolderPreview { models: 0, folders: 0 });
     }
 
     #[test]

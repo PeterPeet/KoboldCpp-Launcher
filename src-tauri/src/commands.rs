@@ -712,6 +712,12 @@ pub fn add_library_folder(state: State<'_, AppState>, path: PathBuf, recursive: 
     })
 }
 
+/// How many models a folder would add (for the add-folder dialog).
+#[tauri::command]
+pub async fn preview_folder(path: PathBuf, recursive: bool) -> CmdResult<crate::library::FolderPreview> {
+    tauri::async_runtime::spawn_blocking(move || crate::library::preview(&path, recursive)).await.map_err(err)
+}
+
 #[tauri::command]
 pub fn remove_library_folder(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
     state.update_settings(|s| s.library_folders.retain(|f| f.path != path))

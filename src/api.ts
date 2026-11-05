@@ -187,6 +187,8 @@ export const api = {
 
   library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
   addFolder: (path: string, recursive = true) => call<Settings>("add_library_folder", { path, recursive }, () => (mockSettings = { ...mockSettings, libraryFolders: [...mockSettings.libraryFolders, { path, recursive }] })),
+  previewFolder: (path: string, recursive: boolean) =>
+    call<{ models: number; folders: number }>("preview_folder", { path, recursive }, () => ({ models: recursive ? 3 : 0, folders: recursive ? 2 : 0 })),
   removeFolder: (path: string) => call<Settings>("remove_library_folder", { path }),
   moveModel: (path: string, dest: string) => call<string>("move_model", { path, dest }),
   trashModel: (path: string) => call<void>("trash_model", { path }, () => import("./mock").then((m) => m.mockTrash(path))),
