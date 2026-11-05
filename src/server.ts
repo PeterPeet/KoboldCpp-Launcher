@@ -19,8 +19,14 @@ export function setStatus() {
   st.classList.toggle("on", S.server.state === "running");
   st.classList.toggle("busy", S.server.state === "starting");
   st.classList.toggle("bad", S.server.state === "failed");
-  st.title = S.server.state === "failed" ? S.server.message : "";
+  st.title = S.server.state === "failed" ? S.server.message : statusText(S.server, S.running);
   document.getElementById("statusText")!.textContent = statusText(S.server, S.running);
+  // Green "Open Lite" next to the status while a model is running.
+  const lite = document.getElementById("liteBtn");
+  if (lite) {
+    lite.hidden = S.server.state !== "running";
+    lite.onclick = openLite;
+  }
 }
 
 export const isActive = () => S.server.state === "starting" || S.server.state === "running";
