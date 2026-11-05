@@ -5,6 +5,7 @@ import { api, fmtBytes, inTauri, type Gpu, type Kcpps, type LocalModel, type Pre
 import { $, h, select, toggle, toast, type Kid } from "../dom";
 import { isActive, launch, stop } from "../server";
 import { reveal } from "../dialogs/update";
+import { getTheme, setTheme, type Theme } from "../theme";
 import { S, render } from "../state";
 
 const ICONS: Record<string, string> = {
@@ -16,10 +17,11 @@ const ICONS: Record<string, string> = {
   network: "M12 3v6 M5 15v-3h14v3 M3 15h4v6H3z M10 15h4v6h-4z M17 15h4v6h-4z",
   presets: "M6 3h12v18l-6-4-6 4z",
   logs: "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+  appearance: "M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.5 0-.9-.6-1.3-.6-2 0-.8.6-1.5 1.5-1.5H17a4 4 0 004-4c0-5-4-9-9-9z M7.5 11.5h.01 M10 7.5h.01 M14 7.5h.01 M16.5 11h.01",
 };
 const PAGES: [string, string][] = [
   ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"], ["images", "Images"],
-  ["voice", "Voice and audio"], ["network", "Network"], ["presets", "Presets"], ["logs", "Logs"],
+  ["voice", "Voice and audio"], ["network", "Network"], ["presets", "Presets"], ["logs", "Logs"], ["appearance", "Appearance"],
 ];
 
 /* ---------- config state ---------- */
@@ -369,6 +371,25 @@ function logsPage(pane: HTMLElement) {
     pre);
 }
 
+/* ---------- appearance ---------- */
+
+function appearancePage(pane: HTMLElement) {
+  const cur = getTheme();
+  // Small picture of each scheme: top bar + window, in its own colors.
+  const choice = (id: Theme, label: string, hint: string, top: string, body: string, accent: string) =>
+    h("button", { class: "theme", role: "radio", "aria-checked": String(cur === id), onclick: () => { setTheme(id); render(); } },
+      h("div", { class: "sw" },
+        h("i", { style: `background:${top}` }),
+        h("i", { style: `background:${body};position:relative` },
+          h("i", { style: `position:absolute;left:12px;bottom:12px;width:64px;height:16px;border-radius:6px;background:${accent}` }))),
+      h("div", { class: "lbl" }, label, h("small", {}, hint)));
+  pane.append(title("Appearance"),
+    h("p", { class: "note", style: "margin:0" }, "Color scheme of the launcher. Applies right away."),
+    h("div", { class: "themes", role: "radiogroup", "aria-label": "Color scheme" },
+      choice("light", "Light", "Bright and neutral", "#ffffff", "#eef0f4", "#3451d1"),
+      choice("lite", "KoboldAI Lite", "Lite's default color scheme (Modern)", "#32496d", "#0b141a", "#415577")));
+}
+
 /* ---------- screen ---------- */
 
 export function renderAdvanced() {
@@ -381,9 +402,9 @@ export function renderAdvanced() {
   const pane = h("section", { class: "pane" });
   root.append(pane);
 
-  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
+  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
   // The log page is a viewer: no command line or start buttons below it.
-  if (A.page === "logs") return root;
+  if (A.page === "logs" || A.page === "appearance") return root;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(cli); toast("Command copied"); }

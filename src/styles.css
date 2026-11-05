@@ -20,6 +20,36 @@
   --accent:#6f86ff; --accent-fg:#0d1020; --accent-soft:#232c55; --accent-text:#a9b7ff;
   --ok:#4cc38a; --ok-soft:#173326; --warn:#e3a94a; --warn-soft:#3a2c14; --bad:#f07a6f; --bad-soft:#3b1d1a;
   --g0:#2d3778; --g0t:#d7dcfb; --g1:#164a35; --g1t:#cdeee0; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.35); color-scheme:dark}
+/* KoboldAI Lite's default color scheme "Modern" = "Default (Cedo)" in Lite's themes.js:
+   topmenu #32496d, topbtn #415577, bg_outer/popups #182330, bg_chat #0b141a, input_bg #475162,
+   border #415577, fg #d1d1d1, fg_highlight #94d7ff, fg_muted #9b9b9b, accent_bg_highlight #596985,
+   user_name #18d4bb, ai_name #da6060, pending_text #f1dd21, user_msg_bg #005c4b. */
+:root[data-theme="lite"]{
+  --bg:#0b141a; --win:#182330; --panel:#0b141a; --line:#283a52; --line-2:#415577;
+  --fg:#e0e0e0; --fg-2:#d1d1d1; --fg-3:#9b9b9b;
+  --accent:#32496d; --accent-fg:#ffffff; --accent-soft:#32496d; --accent-text:#94d7ff;
+  --ok:#18d4bb; --ok-soft:#0d3534; --warn:#f1dd21; --warn-soft:#38351a; --bad:#da6060; --bad-soft:#3d2026;
+  --g0:#32496d; --g0t:#e0e0e0; --g1:#005c4b; --g1t:#e1e6e7;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.45); color-scheme:dark}
+:root[data-theme="lite"] .bar{background:#32496d;border-bottom-color:#415577}
+:root[data-theme="lite"] .card,:root[data-theme="lite"] .tile,:root[data-theme="lite"] .list,:root[data-theme="lite"] .grp,:root[data-theme="lite"] .dialog{background:#182330}
+:root[data-theme="lite"] .app>.screen{background:#0b141a}
+:root[data-theme="lite"] button{background:#415577;border-color:#415577;color:#e0e0e0}
+:root[data-theme="lite"] button:hover{background:#596985}
+:root[data-theme="lite"] button.primary{background:#32496d;border-color:#94d7ff;color:#fff}
+:root[data-theme="lite"] button.primary:hover{background:#596985;filter:none}
+:root[data-theme="lite"] button.ghost,:root[data-theme="lite"] button.linkbtn{background:transparent;border-color:transparent}
+:root[data-theme="lite"] button.go-start{background:#005c4b;border-color:#18d4bb;color:#e1e6e7}
+:root[data-theme="lite"] input:not([type=checkbox]):not([type=range]),:root[data-theme="lite"] select{background:#475162;color:#e0e0e0;border-color:#415577}
+:root[data-theme="lite"] .tabs button,:root[data-theme="lite"] .snav button,:root[data-theme="lite"] .seg button{background:transparent;border-color:transparent}
+:root[data-theme="lite"] .tabs button[aria-selected="true"]{color:#94d7ff;border-bottom-color:#94d7ff}
+:root[data-theme="lite"] .snav button[aria-current="true"]{background:#32496d;color:#fff}
+:root[data-theme="lite"] .famrow button,:root[data-theme="lite"] .pillbtn{background:#182330;border-color:#415577;color:#d1d1d1}
+:root[data-theme="lite"] .famrow button[aria-selected="true"]{background:#415577;border-color:#94d7ff;color:#fff}
+:root[data-theme="lite"] .theme{background:#182330}
+:root[data-theme="lite"] .theme[aria-checked="true"]{border-color:#94d7ff;box-shadow:0 0 0 1px #94d7ff}
+:root[data-theme="lite"] .nav a{color:#d1d1d1}
+:root[data-theme="lite"] .nav a[aria-current="page"]{background:#415577;color:#fff}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0}
@@ -179,6 +209,13 @@ pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(-
 .qrow{display:grid;grid-template-columns:minmax(110px,auto) 1fr auto;gap:10px;align-items:center;font-size:13px}
 .qrow .prog{grid-column:1/-1}
 .addrow input#hfq{font-family:var(--f-ui)}
+.themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.theme{border:2px solid var(--line);border-radius:12px;padding:0;overflow:hidden;text-align:left;background:var(--win);cursor:pointer}
+.theme[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.theme .sw{height:84px;display:grid;grid-template-rows:22px 1fr;border-bottom:1px solid var(--line)}
+.theme .sw i{display:block}
+.theme .lbl{padding:10px 12px;font-size:14px;font-weight:600;color:var(--fg)}
+.theme .lbl small{display:block;font-weight:400;color:var(--fg-3);font-size:12px}
 /* advanced */
 .adv{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100%}
 .snav{display:grid;gap:2px}

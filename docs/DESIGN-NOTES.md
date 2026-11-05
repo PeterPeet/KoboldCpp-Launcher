@@ -163,6 +163,9 @@ First full version built in six phases (commits on `main`). Decisions made on th
   `<arch>.nextn_predict_layers` > 0; on Hugging Face, repos that ship `MTP/` or `mtp-` files
   (unsloth's convention). If a needed file is missing (e.g. Vision switched on), the green Start
   turns back into "Get and start", which downloads only what is missing.
+- **Appearance** (Advanced setup): "Light" or "KoboldAI Lite". The Lite scheme uses Lite's default
+  color scheme "Modern" (`"Default (Cedo)"` in Lite's `themes.js`; the "Aqua" values in Lite's CSS
+  are only its fallback). Stored in localStorage, applied before the first render.
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.

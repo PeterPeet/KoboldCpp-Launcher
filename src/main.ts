@@ -5,6 +5,8 @@ import "@fontsource/figtree/700.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./styles.css";
+import { applyTheme } from "./theme";
+applyTheme();
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
