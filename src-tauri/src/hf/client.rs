@@ -82,6 +82,37 @@ impl Hf<'_> {
         Ok(super::parse_tree(&tree))
     }
 
+    /// MTP layers in a GGUF on Hugging Face (`nextn_predict_layers`, 0 = none), read from the
+    /// file's first megabyte. `None` when that can't be told (offline, no range support, keys
+    /// cut off). Files under a URL don't change, so the answer is kept.
+    pub async fn mtp_layers(&self, url: &str) -> Option<u32> {
+        let file = cache_file(&self.cache, &format!("mtp-layers:{url}"));
+        if let Some(n) = std::fs::read_to_string(&file).ok().and_then(|t| t.trim().parse().ok()) {
+            return Some(n);
+        }
+        let r = self
+            .http
+            .get(crate::download::normalize_url(url))
+            .header(reqwest::header::RANGE, "bytes=0-1048575")
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+            .ok()?;
+        // Only a partial answer: a server that ignores the range would send the whole model.
+        if r.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            return None;
+        }
+        let bytes = r.bytes().await.ok()?;
+        let (info, complete) = crate::gguf::read_header_prefix(&bytes).ok()?;
+        let n = match info.mtp_layers {
+            Some(n) => n,
+            None if complete => 0,
+            None => return None,
+        };
+        let _ = crate::store::write_atomic(&file, n.to_string().as_bytes());
+        Some(n)
+    }
+
     /// Size of a file behind a URL (HEAD, following redirects). Cached for a week.
     pub async fn size_of(&self, url: &str) -> Option<u64> {
         let key = format!("size:{url}");

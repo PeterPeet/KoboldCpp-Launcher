@@ -56,15 +56,19 @@ export interface PopularItem extends Ranked {
   pick: QuantPick; urls: string[]; mmproj: [string, number] | null;
   /** Everything (model + vision file) is on this computer. */
   downloaded: boolean; modelDownloaded: boolean; mmprojDownloaded: boolean;
-  /** The repo ships MTP layers (faster answers with --usemtp). */
-  mtp: boolean;
+  /** How the model can use MTP (faster answers); null: not possible or unknown. */
+  mtp: Mtp | null;
+  /** The MTP head file is on this computer (false when there is none to download). */
+  mtpDownloaded: boolean;
   /** Estimated tokens/s here; `measured` when KoboldCpp already ran this file here. */
   tps: number | null; measured: number | null;
 }
 export type SortOrder = "trending" | "downloads" | "likes" | "newest";
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
 export interface QuantFile { quant: string; label: string; files: string[]; size: number }
-export interface RepoFiles { quants: QuantFile[]; mmproj: [string, number][]; mtp: boolean }
+/** builtIn: the model file has MTP layers (--usemtp). Otherwise a separate MTP head file (--draftmodel). */
+export interface Mtp { builtIn: boolean; url: string | null; size: number | null }
+export interface RepoFiles { quants: QuantFile[]; mmproj: [string, number][]; mtp: [string, number][] }
 export interface DlProgress { id: string; done: number; total: number | null; speed: number; file: string }
 export interface Source {
   id: string; name: string; builtin: boolean; on: boolean; desc: string;
@@ -75,7 +79,7 @@ export interface Machine {
   /** Memory bandwidths (GB/s) for the speed estimate. */
   speed: { gpuBandwidth: number | null; cpuBandwidth: number | null; apple: boolean };
 }
-export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector";
+export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector" | "MtpHead";
 export interface LocalModel {
   path: string; file: string; name: string; kind: ModelKind; architecture: string | null; quant: string | null; sizeLabel: string | null;
   size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
@@ -85,6 +89,8 @@ export interface LocalModel {
   format: "gguf" | "mlx" | "safetensors";
   /** The file has MTP layers (faster answers with --usemtp). */
   mtp: boolean;
+  /** No MTP layers of its own, but an MTP head next to it (--draftmodel): path and size. */
+  mtpDraft: [string, number] | null;
 }
 export interface LocalFit { fit: Fit; gpuLayers: number; memory: number; tps: number | null; measured: number | null }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }

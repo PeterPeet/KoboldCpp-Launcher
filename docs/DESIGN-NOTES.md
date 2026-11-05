@@ -159,10 +159,23 @@ First full version built in six phases (commits on `main`). Decisions made on th
   and loads GGUF only.
 - **Vision / MTP checkboxes:** only where available, both on by default; a choice the user makes
   is kept per model (localStorage, only explicit choices stored). Vision off = the mmproj is
-  neither downloaded nor loaded. MTP (`--usemtp`): local GGUFs with
-  `<arch>.nextn_predict_layers` > 0; on Hugging Face, repos that ship `MTP/` or `mtp-` files
-  (unsloth's convention). If a needed file is missing (e.g. Vision switched on), the green Start
-  turns back into "Get and start", which downloads only what is missing.
+  neither downloaded nor loaded. If a needed file is missing (e.g. Vision switched on), the green
+  Start turns back into "Get and start", which downloads only what is missing.
+- **MTP comes in two forms** (checked in KoboldCpp v1.124.2 `kcpp_src/gpttype_adapter.cpp`):
+  - *Built in* (Qwen 3.5+, `qwen35`): the model file has `<arch>.nextn_predict_layers` > 0 and
+    `nextn` tensors; `--usemtp` builds MTP from them, nothing to download. The repo's 1.3 GB
+    `MTP/mtp-…` file is only a copy of those layers for llama.cpp and is not used.
+  - *Separate head* (Gemma 4, arch `gemma4-assistant`, `nextn_predict_layers` = 4): the model
+    file has none, so `--usemtp` alone does nothing. The head (~93 MB Q8_0) goes in as
+    `--draftmodel`; KoboldCpp detects the MTP head and switches to MTP decoding.
+  - Only repos that ship `MTP/` or `mtp-` files are checked: the first megabyte of the model file
+    and of the head is read with an HTTP range request (`gguf::read_header_prefix`, stops at the
+    tokenizer keys; cached per URL). Head choice: Q8_0 (unsloth's recommendation), else the
+    smallest. Rows show "MTP: built in" or "MTP: 93 MB". A repo without MTP files whose model has
+    built-in layers (e.g. other uploaders' Qwen 3.5+ quants) gets no MTP option (not checked).
+  - Library: `mtp-*.gguf` / `*-assistant` files are add-ons (no card of their own), paired with a
+    model in the same folder or its `MTP/` subfolder that has no MTP layers itself.
+  - KoboldCpp warns that MTP may not work well with a vision projector; rows with both ticked say so.
 - **Appearance** (Advanced setup): "Light" or "KoboldAI Lite". The Lite scheme uses Lite's default
   color scheme "Modern" (`"Default (Cedo)"` in Lite's `themes.js`; the "Aqua" values in Lite's CSS
   are only its fallback). Stored in localStorage, applied before the first render.

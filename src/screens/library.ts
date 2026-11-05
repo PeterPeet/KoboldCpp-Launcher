@@ -8,7 +8,9 @@ import { famClass, popularRow, speedText } from "./start";
 import { getOpts, setOpts } from "../modelopts";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
-const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
+const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on", MtpHead: "MTP add-on" };
+/** Add-on files load with a model and don't get a card of their own. */
+const isAddOn = (m: LocalModel) => m.kind === "Projector" || m.kind === "MtpHead";
 
 let view: LibraryView | null = null;
 let loading = false;
@@ -42,8 +44,14 @@ async function loadFits() {
   fitKey = key;
   const ms = view.models;
   const sizeOf = (p: string | null) => (p ? view!.models.find((x) => x.path === p)?.size ?? 0.9 * 1024 ** 3 : null);
+  // Files loaded next to the model: the vision file and the MTP head, when ticked.
+  const extraOf = (m: LocalModel) => {
+    const o = getOpts(m.path);
+    const n = (o.vision ? sizeOf(m.mmproj) ?? 0 : 0) + (o.mtp && !m.mtp && m.mtpDraft ? m.mtpDraft[1] : 0);
+    return n || null;
+  };
   // KoboldCpp's own layer estimate with the GGUF layout, at the context the launcher starts with.
-  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: getOpts(m.path).vision ? sizeOf(m.mmproj) : null, path: m.path, name: m.name + " " + m.file })), machine(16384));
+  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: extraOf(m), path: m.path, name: m.name + " " + m.file })), machine(16384));
   fits = Object.fromEntries(ms.map((m, i) => [m.path, r[i]]));
   renderLibGrid();
 }
@@ -185,7 +193,9 @@ function startModel(m: LocalModel) {
   if (m.kind === "Embedding") Object.assign(cfg, { model_param: "", embeddingsmodel: m.path });
   const o = getOpts(m.path);
   if (m.mmproj && o.vision) cfg.mmproj = m.mmproj;
+  // MTP: the file's own layers, or the MTP head next to it as draft model.
   if (m.mtp && o.mtp) cfg.usemtp = true;
+  else if (m.mtpDraft && o.mtp) cfg.draftmodel = m.mtpDraft[0];
   const go = async () => { if (S.running) await stop(); launch(m.name, cfg); };
   go();
 }
@@ -219,7 +229,7 @@ export function renderLibrary() {
   }
 
   if (view && L.tab === "local") {
-    const models = view.models.filter((m) => m.kind !== "Projector");
+    const models = view.models.filter((m) => !isAddOn(m));
     const runnable = models.filter((m) => runStatus(m, fits[m.path]).start === "yes").length;
     side.append(h("label", { class: "chk", for: "f-runs", style: "font-weight:600" },
       "Only models that run here", h("span", { class: "n" }, runnable),
@@ -346,7 +356,7 @@ function renderLibGrid() {
   loadFits();
   const qq = L.q.toLowerCase();
   const items = view.models.filter((m) =>
-    m.kind !== "Projector" &&
+    !isAddOn(m) &&
     (!L.types.size || L.types.has(m.kind)) &&
     (!L.fams.size || L.fams.has(family(m))) &&
     (!L.drives.size || (m.drive && L.drives.has(m.drive))) &&
@@ -381,10 +391,10 @@ function renderLibGrid() {
       h("label", { class: "opt", for: id, title }, checkbox(id, on, (v) => { set(v); fitKey = ""; loadFits(); }), label);
     const textual = m.kind === "Text" || m.kind === "Vision";
     // Only options this model really has: a vision file, MTP layers. Both on by default.
-    const opts = m.format === "gguf" && textual && (m.mmproj || m.mtp)
+    const opts = m.format === "gguf" && textual && (m.mmproj || m.mtp || m.mtpDraft)
       ? h("div", { class: "opts" },
           m.mmproj ? optBox(`vis-${m.path}`, "Vision", "Load the vision file so the model can see images (needs more memory)", o.vision, (v) => setOpts(m.path, { vision: v })) : null,
-          m.mtp ? optBox(`mtp-${m.path}`, "MTP (faster)", "Use the model's MTP layers to answer faster (needs a bit more memory)", o.mtp, (v) => setOpts(m.path, { mtp: v })) : null)
+          m.mtp || m.mtpDraft ? optBox(`mtp-${m.path}`, "MTP (faster)", m.mtp ? "Use the model's MTP layers to answer faster (needs a bit more memory)" : `Use the MTP file next to it (${fmtBytes(m.mtpDraft![1])}) to answer faster`, o.mtp, (v) => setOpts(m.path, { mtp: v })) : null)
       : null;
     grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
       h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),

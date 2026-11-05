@@ -57,7 +57,7 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
     const p = pick(x.quants, m);
     if (!p) { tooBig++; continue; }
     kept++;
-    const item: PopularItem = { ...toRanked(x, si), tps: mockTps(p.size, m), measured: null, pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF"), modelDownloaded: x.repo.includes("LFM3-1.7B-GGUF") || x.repo.includes("Qwen3-VL"), mmprojDownloaded: false, mtp: x.repo.includes("Qwen3.8") };
+    const item: PopularItem = { ...toRanked(x, si), tps: mockTps(p.size, m), measured: null, pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF"), modelDownloaded: x.repo.includes("LFM3-1.7B-GGUF") || x.repo.includes("Qwen3-VL"), mmprojDownloaded: false, mtp: x.repo.includes("Qwen3.8") ? { builtIn: true, url: null, size: null } : null, mtpDownloaded: false };
     const cur = best.get(x.base);
     if (!cur || si < cur.source) best.set(x.base, item);
   }
@@ -91,7 +91,7 @@ export function mockRepoFiles(repo: string): RepoFiles {
   return {
     quants: Object.entries(x?.quants ?? { Q4_K_M: 4.6 }).map(([q, s]) => ({ quant: q, label: q, files: [`model-${q}.gguf`], size: s * GB })),
     mmproj: x?.tags.includes("sees images") ? [["mmproj-F16.gguf", 0.9 * GB]] : [],
-    mtp: !!x?.repo.includes("Qwen3.8"),
+    mtp: x?.repo.includes("Qwen3.8") ? [["MTP/mtp-model-Q8_0.gguf", 0.1 * GB]] : [],
   };
 }
 
@@ -106,13 +106,13 @@ export function mockLibrary(): LibraryView {
     layers: 40, contextLength: m.ctx === "–" ? null : parseInt(m.ctx) * 1024, headCountKv: 8, kvLen: 128,
     mmproj: m.type === "Vision" ? `/${m.drive}/models/mmproj-F16.gguf` : null, drive: `/${m.drive}`, modified: null,
     lastUsed: m.used === "Never" ? null : Date.now() / 1000 - 86400 * (m.id % 9),
-    missingParts: m.id === 4 ? 1 : 0, readable: true, format: "gguf" as const, mtp: m.id === 2,
+    missingParts: m.id === 4 ? 1 : 0, readable: true, format: "gguf" as const, mtp: m.id === 2, mtpDraft: null,
     support: m.type === "Image" || m.type === "Speech" ? null : m.id === 10 ? "no" as const : "yes" as const,
   })).filter((m) => !removed.has(m.path));
   models.push({
     path: "/C/lmstudio/gemma-4-E2B-it-MLX-4bit", file: "gemma-4-E2B-it-MLX-4bit", name: "gemma-4-E2B-it-MLX-4bit", kind: "Vision", architecture: "gemma4",
     quant: "4-bit", sizeLabel: null, size: 4.3 * GB, parts: 1, layers: 35, contextLength: 131072, headCountKv: null, kvLen: null, mmproj: null,
-    drive: "/C", modified: null, lastUsed: null, missingParts: 0, readable: true, support: null, format: "mlx", mtp: false,
+    drive: "/C", modified: null, lastUsed: null, missingParts: 0, readable: true, support: null, format: "mlx", mtp: false, mtpDraft: null,
   });
   return {
     models,

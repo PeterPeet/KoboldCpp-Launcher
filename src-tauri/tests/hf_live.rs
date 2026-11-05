@@ -66,3 +66,23 @@ async fn top_model_per_family() {
         println!("{label:<10} {}", shown.unwrap_or("— nothing fits".into()));
     }
 }
+
+/// MTP: Gemma 4 needs the separate MTP head (`--draftmodel`), Qwen3.8 has the layers built in.
+#[tokio::test]
+#[ignore]
+async fn mtp_kinds() {
+    let http = download::client();
+    let dir = tempfile::tempdir().unwrap();
+    let h = Hf { http: &http, cache: dir.path().to_path_buf() };
+    for (repo, model, built_in) in [("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf", false), ("unsloth/Qwen3.8-27B-GGUF", "Qwen3.8-27B-Q4_0.gguf", true)] {
+        let f = h.files(repo).await.unwrap();
+        let (head, size) = f.best_mtp().unwrap().clone();
+        let in_model = h.mtp_layers(&hf::resolve_url(repo, model)).await.unwrap();
+        let in_head = h.mtp_layers(&hf::resolve_url(repo, &head)).await.unwrap();
+        println!("{repo}: model {in_model} MTP layers; {head} ({} MB) {in_head}", size >> 20);
+        assert_eq!(in_model > 0, built_in);
+        assert!(in_head > 0);
+        // Second call comes from the cache.
+        assert_eq!(h.mtp_layers(&hf::resolve_url(repo, model)).await, Some(in_model));
+    }
+}

@@ -14,6 +14,8 @@ pub enum ModelType {
     Embedding,
     /// Vision projector (`mmproj`), loaded next to a text model.
     Projector,
+    /// MTP head (`mtp-*.gguf`): faster answers for the model next to it (`--draftmodel`).
+    MtpHead,
 }
 
 /// File format of a model on disk. KoboldCpp loads GGUF only.
@@ -59,6 +61,8 @@ pub struct LocalModel {
     pub format: Format,
     /// The file has MTP layers (KoboldCpp `--usemtp`).
     pub mtp: bool,
+    /// No MTP layers of its own, but an MTP head next to it (`--draftmodel`), with its size.
+    pub mtp_draft: Option<(PathBuf, u64)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +81,8 @@ pub fn classify(file: &str, arch: Option<&str>) -> ModelType {
     let a = arch.unwrap_or("").to_ascii_lowercase();
     if f.starts_with("mmproj") || a == "clip" {
         ModelType::Projector
+    } else if f.starts_with("mtp-") || a.ends_with("-assistant") {
+        ModelType::MtpHead
     } else if a.contains("whisper") || f.contains("whisper") || f.contains("tts") || f.contains("kokoro") || a.contains("outetts") || a.contains("wavtokenizer") {
         ModelType::Speech
     } else if a.contains("bert") || f.contains("embed") || f.contains("bge-") || a == "xlm-roberta" {
@@ -233,6 +239,7 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
                 support: None,
                 format: Format::Gguf,
                 mtp: info.as_ref().and_then(|i| i.mtp_layers).is_some_and(|n| n > 0),
+                mtp_draft: None,
                 path: p.clone(),
                 file,
             }
@@ -252,6 +259,17 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
             m.mmproj = Some(p.clone());
             m.kind = ModelType::Vision;
         }
+    }
+    // Models without MTP layers of their own use an MTP head in their folder (or its MTP/
+    // subfolder), if that head really has MTP layers. The smallest one wins.
+    let heads: Vec<(PathBuf, u64)> = models.iter().filter(|m| m.kind == ModelType::MtpHead && m.mtp).map(|m| (m.path.clone(), m.size)).collect();
+    for m in models.iter_mut().filter(|m| matches!(m.kind, ModelType::Text | ModelType::Vision) && !m.mtp) {
+        let dir = m.path.parent();
+        m.mtp_draft = heads
+            .iter()
+            .filter(|(p, _)| p.parent() == dir || (p.parent().and_then(Path::parent) == dir && p.parent().and_then(Path::file_name).is_some_and(|n| n.eq_ignore_ascii_case("mtp"))))
+            .min_by_key(|(_, s)| *s)
+            .cloned();
     }
     models.extend(weight_dirs.iter().map(|d| weights_model(d, &all_drives, last_used)));
     for m in models.iter_mut().filter(|m| m.format == Format::Gguf) {
@@ -304,6 +322,7 @@ fn weights_model(dir: &Path, drives: &[Drive], last_used: &HashMap<String, u64>)
         support: None,
         format: if mlx { Format::Mlx } else { Format::Safetensors },
         mtp: false,
+        mtp_draft: None,
     }
 }
 
@@ -453,11 +472,29 @@ mod tests {
     #[test]
     fn classifies_by_name_and_arch() {
         assert_eq!(classify("mmproj-F16.gguf", Some("clip")), ModelType::Projector);
+        assert_eq!(classify("mtp-gemma-4-E2B-it.gguf", Some("gemma4-assistant")), ModelType::MtpHead);
+        assert_eq!(classify("mtp-Qwen3.8-27B-Q4_0.gguf", Some("qwen35")), ModelType::MtpHead);
         assert_eq!(classify("whisper-base.en-q5_1.gguf", None), ModelType::Speech);
         assert_eq!(classify("Kokoro_no_espeak_Q4.gguf", None), ModelType::Speech);
         assert_eq!(classify("bge-m3-q8_0.gguf", Some("bert")), ModelType::Embedding);
         assert_eq!(classify("flux-2-klein-4b-Q4_0.gguf", None), ModelType::Image);
         assert_eq!(classify("Qwen3-8B-Q4_K_M.gguf", Some("qwen3")), ModelType::Text);
+    }
+
+    #[test]
+    fn pairs_mtp_head_with_model_without_mtp_layers() {
+        use gguf::tests::Builder;
+        let d = tempfile::tempdir().unwrap();
+        let model = Builder::new().str("general.architecture", "gemma4").u32("gemma4.block_count", 35).build();
+        let head = Builder::new().str("general.architecture", "gemma4-assistant").u32("gemma4-assistant.block_count", 4).u32("gemma4-assistant.nextn_predict_layers", 4).build();
+        std::fs::write(d.path().join("gemma-4-E2B-it-Q4_K_M.gguf"), &model).unwrap();
+        std::fs::create_dir(d.path().join("MTP")).unwrap();
+        std::fs::write(d.path().join("MTP/mtp-gemma-4-E2B-it-Q8_0.gguf"), &head).unwrap();
+        let (models, _) = scan(&[(d.path().to_path_buf(), true)], &Default::default(), None);
+        let m = models.iter().find(|m| m.file.starts_with("gemma")).unwrap();
+        assert!(!m.mtp);
+        assert_eq!(m.mtp_draft.as_ref().map(|x| x.0.clone()), Some(d.path().join("MTP/mtp-gemma-4-E2B-it-Q8_0.gguf")));
+        assert_eq!(models.iter().find(|m| m.file.starts_with("mtp-")).unwrap().kind, ModelType::MtpHead);
     }
 
     #[test]

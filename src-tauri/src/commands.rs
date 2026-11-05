@@ -463,8 +463,10 @@ pub struct PopularItem {
     pub model_downloaded: bool,
     /// The vision file is on this computer (false when there is none).
     pub mmproj_downloaded: bool,
-    /// The repo ships MTP layers (see `RepoFiles::mtp`).
-    pub mtp: bool,
+    /// How this model can use MTP (faster answers); `None`: not possible or unknown.
+    pub mtp: Option<crate::hf::Mtp>,
+    /// The MTP head file is on this computer (false when there is none to download).
+    pub mtp_downloaded: bool,
     /// Estimated generation speed on this PC (tokens/s); `None` when a bandwidth it needs is unknown.
     pub tps: Option<f64>,
     /// Speed KoboldCpp reported for this file here, if it has run before.
@@ -507,10 +509,22 @@ async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], te
     (entries, errors)
 }
 
+/// MTP for a repo that ships MTP files. KoboldCpp uses MTP layers inside the model file with
+/// `--usemtp`; a model without them can use a separate MTP head as `--draftmodel` (it detects the
+/// head and switches to MTP decoding). Both are checked from the files' first megabyte.
+async fn mtp_for(h: &crate::hf::client::Hf<'_>, f: &crate::hf::RepoFiles, repo: &str, model_url: &str) -> Option<crate::hf::Mtp> {
+    let (path, size) = f.best_mtp()?;
+    if h.mtp_layers(model_url).await? > 0 {
+        return Some(crate::hf::Mtp { built_in: true, url: None, size: None });
+    }
+    let url = crate::hf::resolve_url(repo, path);
+    (h.mtp_layers(&url).await? > 0).then_some(crate::hf::Mtp { built_in: false, url: Some(url), size: Some(*size) })
+}
+
 /// Pick a quant for each candidate (in order) until `want` fit; counts the ones too big.
 async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, speeds: &std::collections::HashMap<String, f64>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
     let files = futures_util::future::join_all(cands.iter().map(|m| h.files(&m.id))).await;
-    let mut items: Vec<PopularItem> = Vec::new();
+    let mut items: Vec<(PopularItem, crate::hf::RepoFiles)> = Vec::new();
     let mut too_big = 0;
     for (m, f) in cands.into_iter().zip(files) {
         let Ok(f) = f else { continue };
@@ -527,11 +541,22 @@ async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, spe
         let downloaded = model_downloaded && (mmproj.is_none() || mmproj_downloaded);
         let tps = fit::estimate_tps(pick.size, fit::active_ratio(&m.id), gpu_share(pick.fit, pick.size, machine.vram), &machine.speed);
         let measured = local_file(models, &urls[0], single.then_some(pick.size)).and_then(|p| speeds.get(&p.to_string_lossy().to_string()).copied());
-        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded, model_downloaded, mmproj_downloaded, mtp: f.mtp, tps, measured });
+        items.push((PopularItem { model: m, pick, urls, mmproj, downloaded, model_downloaded, mmproj_downloaded, mtp: None, mtp_downloaded: false, tps, measured }, f));
     }
     // Keep ranking order, but a normal quant beats a squeezed fallback.
-    items.sort_by_key(|i| i.pick.fallback);
+    items.sort_by_key(|i| i.0.pick.fallback);
     items.truncate(want);
+    // MTP only for the rows shown (it reads the start of model files).
+    let mtps = futures_util::future::join_all(items.iter().map(|(i, f)| mtp_for(h, f, &i.model.id, &i.urls[0]))).await;
+    let items = items
+        .into_iter()
+        .zip(mtps)
+        .map(|((mut i, _), mtp)| {
+            i.mtp_downloaded = mtp.as_ref().and_then(|x| x.url.as_ref().zip(x.size)).is_some_and(|(u, s)| local_file(models, u, Some(s)).is_some());
+            i.mtp = mtp;
+            i
+        })
+        .collect();
     (items, too_big)
 }
 

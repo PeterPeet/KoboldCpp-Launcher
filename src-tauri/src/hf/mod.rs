@@ -488,12 +488,32 @@ pub struct RepoFiles {
     pub quants: Vec<QuantFile>,
     /// Vision projector files (`mmproj-*.gguf`) with sizes.
     pub mmproj: Vec<(String, u64)>,
-    /// The repo ships MTP files (`MTP/…`, `mtp-…`): its models have multi-token-prediction
-    /// layers that KoboldCpp can use (`--usemtp`). unsloth publishes them this way.
-    pub mtp: bool,
+    /// MTP files with sizes (`MTP/…`, `mtp-…`), as unsloth and ggml-org publish them. Either a
+    /// separate MTP head (Gemma 4 "assistant") or a copy of layers the model file already has
+    /// (Qwen 3.5+); `commands::mtp_for` tells them apart.
+    pub mtp: Vec<(String, u64)>,
+}
+
+/// How a model can use multi-token prediction in KoboldCpp.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mtp {
+    /// The model file has MTP layers: `--usemtp`, nothing to download.
+    pub built_in: bool,
+    /// Otherwise the separate MTP head, loaded with `--draftmodel` (URL and size).
+    pub url: Option<String>,
+    pub size: Option<u64>,
 }
 
 impl RepoFiles {
+    /// MTP file to use: Q8_0 (what unsloth recommends for the draft head), else the smallest; on
+    /// a tie the copy at the repo root. unsloth's root `mtp-<model>.gguf` is its Q8_0 copy.
+    pub fn best_mtp(&self) -> Option<&(String, u64)> {
+        let q8 = |p: &str| p.to_ascii_uppercase().contains("Q8_0");
+        let q8_size = self.mtp.iter().find(|(p, _)| q8(p)).map(|(_, s)| *s);
+        self.mtp.iter().min_by_key(|(p, s)| (Some(*s) != q8_size && !q8(p), *s, p.contains('/')))
+    }
+
     /// Best vision projector: F16, then BF16, then Q8_0, then any.
     pub fn best_mmproj(&self) -> Option<&(String, u64)> {
         ["F16", "BF16", "Q8_0"].iter().find_map(|q| self.mmproj.iter().find(|(p, _)| p.to_ascii_uppercase().contains(&format!("-{q}.")))).or(self.mmproj.first())
@@ -621,10 +641,14 @@ pub fn parse_tree(entries: &[TreeEntry]) -> RepoFiles {
             groups.push(QuantFile { quant, label, files: vec![e.path.clone()], size: e.size });
         }
     }
-    let mtp = entries.iter().any(|e| {
-        let l = e.path.to_ascii_lowercase();
-        l.starts_with("mtp/") || l.rsplit('/').next().is_some_and(|f| f.starts_with("mtp-"))
-    });
+    let mtp = entries
+        .iter()
+        .filter(|e| {
+            let l = e.path.to_ascii_lowercase();
+            l.ends_with(".gguf") && (l.starts_with("mtp/") || l.rsplit('/').next().is_some_and(|f| f.starts_with("mtp-")))
+        })
+        .map(|e| (e.path.clone(), e.size))
+        .collect();
     RepoFiles { quants: groups, mmproj, mtp }
 }
 
@@ -735,8 +759,22 @@ mod tests {
         assert_eq!(bf16.size, 49986159616 + 4671576000);
         assert!(f.quants.iter().all(|q| !q.files[0].contains("imatrix") && !q.files[0].starts_with("MTP/")));
         assert_eq!(f.best_mmproj().unwrap().0, "mmproj-F16.gguf");
-        assert!(f.mtp, "unsloth's Qwen3.8 repo has an MTP/ folder");
+        assert_eq!(f.best_mtp().map(|m| m.0.as_str()), Some("MTP/mtp-Qwen3.8-27B-Q4_0.gguf"), "unsloth's Qwen3.8 repo has an MTP/ folder");
         assert!(f.sizes().iter().any(|(q, _)| q == "Q6_K"));
+    }
+
+    #[test]
+    fn mtp_file_choice() {
+        let te = |p: &str, s| TreeEntry { kind: "file".into(), path: p.into(), size: s };
+        // ggml-org: three at the root; Q8_0 wins over the smaller Q4_0.
+        let f = parse_tree(&[te("m-Q4_K_M.gguf", 900), te("mtp-m-BF16.gguf", 162), te("mtp-m-Q4_0.gguf", 56), te("mtp-m-Q8_0.gguf", 93)]);
+        assert_eq!(f.best_mtp().unwrap().0, "mtp-m-Q8_0.gguf");
+        // unsloth: root copy (same size as MTP/…-Q8_0) wins the tie.
+        let f = parse_tree(&[te("m-Q4_K_M.gguf", 900), te("MTP/mtp-m-Q8_0.gguf", 93), te("MTP/mtp-m-F16.gguf", 162), te("mtp-m.gguf", 93)]);
+        assert_eq!(f.best_mtp().unwrap().0, "mtp-m.gguf");
+        // Only one quant: that one.
+        let f = parse_tree(&[te("m-Q4_K_M.gguf", 900), te("MTP/mtp-m-Q4_0.gguf", 1306)]);
+        assert_eq!(f.best_mtp().unwrap().0, "MTP/mtp-m-Q4_0.gguf");
     }
 
     #[test]
@@ -746,7 +784,7 @@ mod tests {
         assert_eq!(f.quants.len(), 1);
         assert_eq!(f.quants[0].quant, "Q4_0");
         assert_eq!(f.mmproj.len(), 1);
-        assert!(!f.mtp);
+        assert!(f.mtp.is_empty());
     }
 
     #[test]

@@ -187,6 +187,18 @@ pub fn split_paths(path: &Path) -> Vec<PathBuf> {
 }
 
 pub fn read_header<T: Read>(input: T) -> Result<GgufInfo, GgufError> {
+    header(input, false).map(|(info, _)| info)
+}
+
+/// Metadata from the start of a file only (e.g. the first megabyte via an HTTP range request).
+/// Writers put the model's own keys before the tokenizer's long word lists, so reading stops at
+/// the tokenizer. `complete` is false when the data ended before that point: keys not found are
+/// then unknown, not absent.
+pub fn read_header_prefix(bytes: &[u8]) -> Result<(GgufInfo, bool), GgufError> {
+    header(bytes, true)
+}
+
+fn header<T: Read>(input: T, prefix: bool) -> Result<(GgufInfo, bool), GgufError> {
     let mut r = R(input);
     if &r.buf::<4>()? != b"GGUF" {
         return Err(GgufError::NotGguf);
@@ -202,13 +214,34 @@ pub fn read_header<T: Read>(input: T) -> Result<GgufInfo, GgufError> {
     }
     let mut info = GgufInfo { version, tensor_count, ..Default::default() };
     let mut arch_keys: Vec<(String, Val)> = Vec::new();
+    let mut complete = true;
+    let eof = |e: &GgufError| matches!(e, GgufError::Io(x) if x.kind() == io::ErrorKind::UnexpectedEof);
     for _ in 0..kv_count {
-        let key = r.string()?;
-        let ty = r.u32()?;
+        // Prefix mode: the end of the data is fine once the model's keys are behind us.
+        macro_rules! read {
+            ($e:expr) => {
+                match $e {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let e = GgufError::from(e);
+                        if prefix && eof(&e) {
+                            complete = false;
+                            break;
+                        }
+                        return Err(e);
+                    }
+                }
+            };
+        }
+        let key = read!(r.string());
+        if prefix && key.starts_with("tokenizer.") && arch_keys.iter().any(|(k, _)| k.ends_with(".block_count")) {
+            break;
+        }
+        let ty = read!(r.u32());
         let wanted = key.starts_with("general.") || key.ends_with(".block_count") || key.ends_with(".context_length")
             || key.ends_with(".embedding_length") || key.ends_with(".attention.head_count_kv")
             || key.ends_with(".attention.key_length") || key.ends_with(".attention.value_length") || key.ends_with(".expert_count") || key.ends_with(".nextn_predict_layers");
-        let val = r.value(ty, wanted)?;
+        let val = read!(r.value(ty, wanted));
         if !wanted {
             continue;
         }
@@ -231,7 +264,7 @@ pub fn read_header<T: Read>(input: T) -> Result<GgufInfo, GgufError> {
         info.expert_count = get("expert_count").and_then(Val::as_u32);
         info.mtp_layers = get("nextn_predict_layers").and_then(Val::as_u32);
     }
-    Ok(info)
+    Ok((info, complete))
 }
 
 /// Read metadata from a file and total up the sizes of all split parts that exist.
@@ -331,6 +364,27 @@ pub mod tests {
         assert_eq!(info.key_length, Some(128));
         assert_eq!(info.mtp_layers, Some(1));
         assert_eq!(info.tensor_count, 291);
+    }
+
+    #[test]
+    fn prefix_stops_at_tokenizer_and_knows_when_it_is_cut() {
+        // Usual order: model keys, then the tokenizer's long lists.
+        let file = Builder::new()
+            .str("general.architecture", "gemma4")
+            .u32("gemma4.block_count", 35)
+            .str_array("tokenizer.ggml.tokens", &["a"; 500])
+            .build();
+        let (info, complete) = read_header_prefix(&file[..160]).unwrap();
+        assert!(complete, "cut inside the tokenizer: model keys are all read");
+        assert_eq!((info.block_count, info.mtp_layers), (Some(35), None));
+        let with_mtp = Builder::new().str("general.architecture", "qwen35").u32("qwen35.block_count", 65).u32("qwen35.nextn_predict_layers", 1).str_array("tokenizer.ggml.tokens", &["a"; 500]).build();
+        assert_eq!(read_header_prefix(&with_mtp[..200]).unwrap().0.mtp_layers, Some(1));
+        // Cut before the model keys end: unknown.
+        assert!(!read_header_prefix(&file[..50]).unwrap().1);
+        // Tokenizer first (llama_like): a cut inside it says nothing about the keys after it.
+        let odd = llama_like();
+        assert!(!read_header_prefix(&odd[..195]).unwrap().1);
+        assert_eq!(read_header_prefix(&odd).unwrap().0.mtp_layers, Some(1));
     }
 
     #[test]

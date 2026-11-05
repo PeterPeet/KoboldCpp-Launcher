@@ -35,7 +35,9 @@ from Hugging Face. Each list shows only what fits.
   Meta, OpenAI, NVIDIA). The family buttons list all models of one family. Hugging Face sorting:
   most downloaded, trending, most liked or newest.
 - **Vision** and **MTP** (faster answers through multi-token prediction) can be switched per
-  model. Both are on by default, and your choice is remembered.
+  model. Both are on by default, and your choice is remembered. MTP is either built into the
+  model file (Qwen 3.5 and newer) or a small extra file the launcher downloads (Gemma 4, e.g.
+  "MTP: 93 MB").
 - Speeds are estimated from your memory bandwidth. After a model has run, the speed KoboldCpp
   measured is shown instead. When a value can't be known, it says N/A rather than guessing.
 

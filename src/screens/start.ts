@@ -82,8 +82,11 @@ export function kindPill(m: { kind: string; author: string }) {
   return h("span", { class: "pill p-mute", title: `Uploaded by ${m.author}` }, `Quant by ${m.author}`);
 }
 
-/** Everything this row would start with is on disk (depends on the Vision choice). */
-const isDownloaded = (m: PopularItem) => m.modelDownloaded && (!m.mmproj || !getOpts(m.id).vision || m.mmprojDownloaded);
+/** The ticked MTP needs the separate MTP head file (not just the model's own layers). */
+const wantsMtpFile = (m: PopularItem) => !!m.mtp && !m.mtp.builtIn && !!m.mtp.url && getOpts(m.id).mtp;
+/** Everything this row would start with is on disk (depends on the Vision and MTP choices). */
+const isDownloaded = (m: PopularItem) =>
+  m.modelDownloaded && (!m.mmproj || !getOpts(m.id).vision || m.mmprojDownloaded) && (!wantsMtpFile(m) || m.mtpDownloaded);
 
 /* ---------- actions ---------- */
 
@@ -113,7 +116,13 @@ export function startPopular(m: PopularItem) {
   if (vision) files.push({ url: m.mmproj![0], size: m.mmproj![1] });
   const cfg: Record<string, unknown> = { model_param: m.urls[0], contextsize: 16384 };
   if (vision) cfg.mmproj = m.mmproj![0];
-  if (m.mtp && getOpts(m.id).mtp) cfg.usemtp = true;
+  // MTP: the model's own layers (--usemtp), or the separate MTP head as draft model; KoboldCpp
+  // recognizes the head and uses MTP decoding.
+  if (m.mtp?.builtIn && getOpts(m.id).mtp) cfg.usemtp = true;
+  if (wantsMtpFile(m)) {
+    files.push({ url: m.mtp!.url!, size: m.mtp!.size! });
+    cfg.draftmodel = m.mtp!.url;
+  }
   getAndStart("m:" + m.id, m.name, files, backendFor(cfg));
 }
 
@@ -220,10 +229,13 @@ export function popularRow(m: PopularItem, showFamily = false) {
         m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
         ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
         m.mmproj ? opt(`vis-${m.id}`, "Vision", "Also download and load the vision file so the model can see images", getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })) : null,
-        m.mtp ? opt(`mtp-${m.id}`, "MTP", "Use the model's MTP layers for faster answers (needs a bit more memory)", getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
+        m.mtp ? opt(`mtp-${m.id}`, "MTP", m.mtp.builtIn ? "Use the model's MTP layers for faster answers (needs a bit more memory)" : `Also download the MTP file (${fmtBytes(m.mtp.size ?? 0)}) for faster answers`, getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
       h("div", { class: "sub", title: m.measured ? "Measured by KoboldCpp on this computer" : "Estimated from this computer's memory bandwidth and the model size" },
         // "Q4_0: 3.1 GB · Vision: 0.9 GB": what the download adds up to with the ticked options.
-        [m.params, `${m.pick.quant}: ${fmtBytes(m.pick.size)}`, m.mmproj && getOpts(m.id).vision ? `Vision: ${fmtBytes(m.mmproj[1])}` : "", speedText(m.tps, m.measured)].filter(Boolean).join(" · ")),
+        [m.params, `${m.pick.quant}: ${fmtBytes(m.pick.size)}`, m.mmproj && getOpts(m.id).vision ? `Vision: ${fmtBytes(m.mmproj[1])}` : "",
+          m.mtp && getOpts(m.id).mtp ? (m.mtp.builtIn ? "MTP: built in" : `MTP: ${fmtBytes(m.mtp.size ?? 0)}`) : "", speedText(m.tps, m.measured)].filter(Boolean).join(" · ")),
+      // KoboldCpp's own warning when both are loaded.
+      m.mmproj && m.mtp && getOpts(m.id).vision && getOpts(m.id).mtp ? h("div", { class: "why", style: "color:var(--warn)" }, "KoboldCpp: MTP may not work well together with Vision.") : null,
       h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
       S.dl[key] ? ctl : null),
     S.dl[key] ? null : ctl);
