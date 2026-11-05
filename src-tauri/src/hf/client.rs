@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 pub const API: &str = "https://huggingface.co/api";
 pub const DAY: Duration = Duration::from_secs(24 * 3600);
-const EXPAND: &str = "expand[]=likes&expand[]=downloads&expand[]=createdAt&expand[]=baseModels&expand[]=tags&expand[]=pipeline_tag";
+const EXPAND: &str = "expand[]=likes&expand[]=downloads&expand[]=createdAt&expand[]=baseModels&expand[]=tags&expand[]=pipeline_tag&expand[]=trendingScore";
 
 pub struct Hf<'a> {
     pub http: &'a reqwest::Client,
@@ -52,13 +52,13 @@ impl Hf<'_> {
     }
 
     /// GGUF repos of one uploader, trending first.
-    pub async fn by_author(&self, author: &str, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
-        self.get_json(&format!("{API}/models?author={author}&filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await
+    pub async fn by_author(&self, author: &str, sort: super::Sort, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
+        self.get_json(&format!("{API}/models?author={author}&filter=gguf&sort={}&limit={limit}&{EXPAND}", sort.api()), DAY).await
     }
 
     /// One uploader's GGUF repos matching a search term (family lists).
-    pub async fn by_author_search(&self, author: &str, term: &str, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
-        self.get_json(&format!("{API}/models?author={author}&search={term}&filter=gguf&sort=trendingScore&limit={limit}&{EXPAND}"), DAY).await
+    pub async fn by_author_search(&self, author: &str, term: &str, sort: super::Sort, limit: u32) -> Result<Vec<ModelEntry>, DownloadError> {
+        self.get_json(&format!("{API}/models?author={author}&search={term}&filter=gguf&sort={}&limit={limit}&{EXPAND}", sort.api()), DAY).await
     }
 
     /// Trending GGUF repos from everyone matching a search term.

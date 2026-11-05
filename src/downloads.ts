@@ -61,5 +61,7 @@ export function goControl(key: string, label: string, onGo: () => void, opts: { 
         h("button", { onclick: () => cancel(key) }, "Cancel")),
       h("small", {}, dlText(d)));
   if (S.running === label && S.server.state !== "stopped") return h("button", { onclick: stop }, "Stop");
-  return h("button", { class: opts.installed ? "" : "primary", onclick: onGo }, opts.text ?? (opts.installed ? "Start" : "Get and start"));
+  // Already on this computer: green Start (nothing to download).
+  if (opts.installed) return h("button", { class: "go-start", onclick: onGo, title: "Already downloaded" }, opts.text ?? "Start");
+  return h("button", { class: "primary", onclick: onGo }, opts.text ?? "Get and start");
 }

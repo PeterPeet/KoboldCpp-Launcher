@@ -11,6 +11,8 @@ export const S = {
   official: true,
   /** Family filter on the start screen; null = "Top" (best of each family). */
   family: null as string | null,
+  /** Order of the popular list. */
+  sort: "downloads" as import("./api").SortOrder,
   uncensored: false,
   showAllTiers: false,
   running: null as string | null,

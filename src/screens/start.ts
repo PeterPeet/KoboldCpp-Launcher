@@ -48,19 +48,20 @@ async function loadTemplateFits() {
   render();
 }
 
-let families: [string, string][] = [];
+let families: [string, string, string][] = [];
+const SORTS: [string, string][] = [["downloads", "Most downloaded"], ["trending", "Trending"], ["likes", "Most liked"], ["newest", "Newest"]];
 async function loadFamilies() {
   try { families = await api.families(); } catch { families = []; }
   render();
 }
 
 async function loadPopular() {
-  const key = JSON.stringify([S.family, S.official, S.uncensored, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
+  const key = JSON.stringify([S.family, S.sort, S.official, S.uncensored, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
   if (key === S.popularKey) return;
   S.popularKey = key;
   S.popular = null;
   try {
-    S.popular = await api.popular({ officialOnly: S.official, showUncensored: S.uncensored }, machine(), S.family);
+    S.popular = await api.popular({ officialOnly: S.official, showUncensored: S.uncensored, sort: S.sort }, machine(), S.family);
     S.popularError = "";
   } catch (e) {
     S.popularError = String(e);
@@ -148,7 +149,7 @@ function templatesSection() {
       h("div", { class: "tile-head" }, h("div", {}, h("h4", {}, t.title), h("div", { class: "file" }, t.id + ".kcppt")), ...fitPill(f)),
       h("div", { class: "parts" }, ...t.parts.map((p) => h("span", {}, p))),
       h("div", { class: "meta" }, (t.size ? `${fmtBytes(t.size)} download` : "Size unknown") + (t.context ? ` · ${Math.round(t.context / 1024)}K context` : "")),
-      f === "none" ? h("div", { class: "meta", style: "color:var(--bad)" }, "Needs more memory than this PC has") : goControl("t:" + t.id, t.title, () => startTemplate(t)))));
+      f === "none" ? h("div", { class: "meta", style: "color:var(--bad)" }, "Needs more memory than this PC has") : goControl("t:" + t.id, t.title, () => startTemplate(t), { installed: t.downloaded }))));
   return [head, list.length ? tiles : h("div", { class: "empty" }, "No templates for this PC. Turn on “Show all templates”.")];
 }
 
@@ -159,15 +160,17 @@ function popularSection() {
     ...([["Original models", true], ["With finetunes", false]] as const).map(([l, v]) =>
       h("button", { "aria-pressed": String(S.official === v), onclick: () => { S.official = v; render(); } }, l)));
   const famRow = h("div", { class: "famrow", role: "tablist", "aria-label": "Model family" },
-    ...([[null, "Top"], ...families] as [string | null, string][]).map(([id, label]) =>
-      h("button", { role: "tab", "aria-selected": String(S.family === id), onclick: () => { S.family = id; render(); } }, label)));
+    ...([[null, "Top", ""], ...families] as [string | null, string, string][]).map(([id, label, maker]) =>
+      h("button", { role: "tab", "aria-selected": String(S.family === id), title: maker ? `Models from hf.co/${maker} and quants of them` : "The best model of each maker", onclick: () => { S.family = id; render(); } }, label)));
+  const sortSel = h("select", { id: "sortSel", "aria-label": "Order" }, ...SORTS.map(([v, l]) => h("option", { value: v, selected: S.sort === v }, l))) as HTMLSelectElement;
+  sortSel.addEventListener("change", () => { S.sort = sortSel.value as typeof S.sort; render(); });
   const head = h("div", { class: "sec-head" },
     h("div", {},
       h("h2", {}, "Choose from popular models yourself"),
       h("p", {}, S.family === null
-        ? "The best model of each family that fits this PC. Pick a family to see its whole list."
-        : "Ranked by downloads, likes and age from your sources. The best quality that fits is picked for you.")),
-    h("div", { class: "controls" }, seg, toggle("unc", S.uncensored, (v) => { S.uncensored = v; render(); }, "Show uncensored finetunes")));
+        ? `Each maker's ${SORTS.find((s) => s[0] === S.sort)![1].toLowerCase()} model that fits this PC, from its own Hugging Face account where it has one. Pick a family to see more.`
+        : "From your sources, in the order you chose. The best quality that fits is picked for you.")),
+    h("div", { class: "controls" }, h("label", { class: "sortlbl" }, "Order", sortSel), seg, toggle("unc", S.uncensored, (v) => { S.uncensored = v; render(); }, "Show uncensored finetunes")));
   const out: HTMLElement[] = [head, famRow];
   const pop = S.popular;
   if (!pop) {
@@ -178,12 +181,13 @@ function popularSection() {
   if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your sources." : "Nothing matches. Turn on more sources or include finetunes."));
   for (const m of pop.items) {
     const key = "m:" + m.id;
-    const ctl = goControl(key, m.name, () => startPopular(m));
+    const ctl = goControl(key, m.name, () => startPopular(m), { installed: m.downloaded });
     list.append(h("div", { class: "row" },
       h("div", { class: "mono-badge fam-" + famClass(m) }, m.name.slice(0, 2)),
       h("div", { class: "main" },
         h("div", { class: "name" }, m.name,
           S.family === null && m.family ? h("span", { class: "pill p-fam" }, families.find((f) => f[0] === m.family)?.[1] ?? m.family) : null,
+          m.downloaded ? h("span", { class: "pill p-ok" }, "Downloaded") : null,
           kindPill(m),
           m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
           ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),

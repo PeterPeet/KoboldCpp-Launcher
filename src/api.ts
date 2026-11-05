@@ -41,6 +41,8 @@ export interface QuantPick { quant: string; size: number; fit: Fit; fallback: bo
 export interface Template {
   id: string; collection: string; url: string; tier: "low" | "mid" | "high" | null; title: string; parts: string[];
   size: number | null; context: number | null; config: Kcpps; files: [string, string, number | null][];
+  /** All files already on this computer. */
+  downloaded: boolean;
 }
 export type ModelKindHf = "official" | "quant" | "finetune";
 export interface Ranked {
@@ -49,7 +51,8 @@ export interface Ranked {
 }
 export interface SearchHit extends Ranked { typical: [string, number] | null }
 export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[] }
-export interface PopularItem extends Ranked { pick: QuantPick; urls: string[]; mmproj: [string, number] | null }
+export interface PopularItem extends Ranked { pick: QuantPick; urls: string[]; mmproj: [string, number] | null; downloaded: boolean }
+export type SortOrder = "trending" | "downloads" | "likes" | "newest";
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
 export interface QuantFile { quant: string; label: string; files: string[]; size: number }
 export interface RepoFiles { quants: QuantFile[]; mmproj: [string, number][] }
@@ -99,7 +102,8 @@ let mockSettings: Settings = {
   binary: { path: "/Applications/koboldcpp", version: "v1.123.1", asset: "koboldcpp-mac-arm64" }, checkUpdatesOnStart: true, includePrereleases: false, modelsDir: null, libraryFolders: [],
   sources: [
     { id: "kcppt", name: "KoboldCpp templates", builtin: true, desc: "Ready-made setups from hf.co/koboldcpp", on: true, comps: null },
-    { id: "labs", name: "Labs' own uploads", builtin: true, desc: "Repo author is the base model author", on: true, comps: { official: true, finetune: false, unc: false } },
+    ...([["google", "Google", "Gemma"], ["Qwen", "Qwen (Alibaba)", "Qwen"], ["zai-org", "Z.ai", "GLM"], ["deepseek-ai", "DeepSeek", "DeepSeek"], ["mistralai", "Mistral AI", "Mistral"], ["meta-llama", "Meta", "Llama"], ["openai", "OpenAI", "GPT-oss"], ["nvidia", "NVIDIA", "Nemotron"]] as const).map(([id, maker, fam]) => (
+      { id, name: id, builtin: true, desc: `${maker}: official ${fam} uploads (hf.co/${id})`, on: true, comps: { official: true, finetune: false, unc: false } })),
     { id: "unsloth", name: "unsloth", builtin: false, desc: "Official quants of new models", on: true, comps: { official: true, finetune: false, unc: false } },
     { id: "bartowski", name: "bartowski", builtin: false, desc: "Official quants and community finetunes", on: false, comps: { official: true, finetune: true, unc: false } },
     { id: "TheDrummer", name: "TheDrummer", builtin: false, desc: "Roleplay and story finetunes", on: false, comps: { official: false, finetune: true, unc: false } },
@@ -160,9 +164,9 @@ export const api = {
   templates: () => call<Template[]>("templates", {}, () => import("./mock").then((m) => m.mockTemplates())),
   fits: (items: [number, number][], machine: Machine) =>
     call<Fit[]>("fits", { items, vram: machine.vram, ram: machine.ram, unified: machine.unified }, () => import("./mock").then((m) => items.map(([s, c]) => m.mockFit(s, c, machine)))),
-  popular: (options: { officialOnly: boolean; showUncensored: boolean }, machine: Machine, family: string | null) =>
+  popular: (options: { officialOnly: boolean; showUncensored: boolean; sort: SortOrder }, machine: Machine, family: string | null) =>
     call<PopularResult>("popular_models", { options, machine, family }, () => import("./mock").then((m) => m.mockPopular(options, machine, mockSettings.sources, family))),
-  families: () => call<[string, string][]>("model_families", {}, () => [["gemma", "Gemma"], ["qwen", "Qwen"], ["glm", "GLM"], ["deepseek", "DeepSeek"], ["mistral", "Mistral"], ["llama", "Llama"], ["gpt-oss", "GPT-oss"], ["nemotron", "Nemotron"]]),
+  families: () => call<[string, string, string][]>("model_families", {}, () => [["gemma", "Gemma", "google"], ["qwen", "Qwen", "Qwen"], ["glm", "GLM", "zai-org"], ["deepseek", "DeepSeek", "deepseek-ai"], ["mistral", "Mistral", "mistralai"], ["llama", "Llama", "meta-llama"], ["gpt-oss", "GPT-oss", "openai"], ["nemotron", "Nemotron", "nvidia"]]),
   search: (query: string) => call<SearchHit[]>("search_models", { query }, () => import("./mock").then((m) => m.mockSearch(query))),
   repoFiles: (repo: string) => call<RepoFiles>("repo_files", { repo }, () => import("./mock").then((m) => m.mockRepoFiles(repo))),
   downloadFiles: (id: string, files: { url: string; size: number | null }[]) =>

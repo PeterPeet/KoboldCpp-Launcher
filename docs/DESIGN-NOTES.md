@@ -131,8 +131,20 @@ First full version built in six phases (commits on `main`). Decisions made on th
 - **Quant pick:** Q6_K → Q5_K_M → Q4_K_M (Q8_0 for models under 3 GB); then Q4_K_M partly on CPU;
   then a smaller quant marked "Smaller quant". F16/BF16/Q5+ never count as fallback.
 - **Popular list** shows text and vision-chat models only (image/voice come from templates).
-  Uploader subfolders that are not quant names (`MTP/`, `dspark/`) are helpers and skipped.
-  "Labs" = trending repos whose author is the base model's author, combined with the official rule.
+  Uploader subfolders and files that are helpers (`MTP/`, `dspark`, drafts, imatrix) are skipped;
+  quant names are found anywhere in a file name (Google: `gemma-4-E4B_q4_0-it.gguf`).
+- **Official** = uploaded by the model maker's own account (known maker list). Others are
+  "Quant by <uploader>" (faithful quant of an original) or "Finetune".
+- **Sources:** each maker is its own built-in source, on by default (google, Qwen, zai-org,
+  deepseek-ai, mistralai, meta-llama, openai, nvidia), plus unsloth; bartowski and TheDrummer
+  optional. Old settings are migrated (the former combined "labs" entry is replaced).
+- **Families and Top:** the family row maps each family to its maker. "Top" shows, per maker whose
+  source is on, its best model that fits, in the chosen order (most downloaded by default;
+  trending, most liked, newest). The maker's own upload wins; quants of its models are used only
+  when the maker has no fitting GGUF of its own (DeepSeek, Meta and OpenAI publish none).
+- **Quant pick:** other 4-bit quants (e.g. Google's QAT Q4_0) are a normal choice; "Smaller quant"
+  only for 3-bit and below.
+- **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.
 - **LAN access:** the advanced page writes `host 127.0.0.1` when "Allow other devices" is off

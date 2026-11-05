@@ -25,6 +25,8 @@ pub struct ModelEntry {
     pub base_models: Option<BaseModels>,
     #[serde(default)]
     pub pipeline_tag: Option<String>,
+    #[serde(default)]
+    pub trending_score: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -52,6 +54,39 @@ impl ModelEntry {
     }
     pub fn relation(&self) -> Option<&str> {
         self.base_models.as_ref().and_then(|b| b.relation.as_deref())
+    }
+}
+
+/// Order of model lists (user's choice on the start screen).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Sort {
+    Trending,
+    #[default]
+    Downloads,
+    Likes,
+    Newest,
+}
+
+impl Sort {
+    /// Value for the Hugging Face API `sort=` parameter.
+    pub fn api(self) -> &'static str {
+        match self {
+            Sort::Trending => "trendingScore",
+            Sort::Downloads => "downloads",
+            Sort::Likes => "likes",
+            Sort::Newest => "createdAt",
+        }
+    }
+
+    /// Bigger is better.
+    pub fn key(self, e: &ModelEntry) -> f64 {
+        match self {
+            Sort::Trending => e.trending_score.unwrap_or(0.0),
+            Sort::Downloads => e.downloads as f64,
+            Sort::Likes => e.likes as f64,
+            Sort::Newest => created_day(e.created_at.as_deref()).unwrap_or(0) as f64,
+        }
     }
 }
 
@@ -158,8 +193,12 @@ const UNCENSORED_WORDS: &[&str] = &["uncensored", "abliterated", "unfiltered", "
 /// of the popular list; KoboldCpp's templates cover those.
 pub fn is_text_model(e: &ModelEntry) -> bool {
     const OTHER: &[&str] = &["text-to-image", "image-to-image", "text-to-video", "image-to-video", "text-to-speech", "text-to-audio", "automatic-speech-recognition", "feature-extraction", "sentence-similarity"];
-    let pipe_ok = e.pipeline_tag.as_deref().is_none_or(|p| !OTHER.contains(&p));
-    pipe_ok && !e.tags.iter().any(|t| OTHER.contains(&t.as_str()))
+    const OTHER_PIPES: &[&str] = &["audio-classification", "voice-activity-detection", "audio-to-audio", "text-ranking"];
+    // Repos without a pipeline tag still say what they are in the name.
+    const OTHER_NAMES: &[&str] = &["diarization", "-asr", "asr-", "parakeet", "whisper", "-tts", "tts-", "speech", "embed", "rerank", "vad-"];
+    let pipe_ok = e.pipeline_tag.as_deref().is_none_or(|p| !OTHER.contains(&p) && !OTHER_PIPES.contains(&p));
+    let name = e.repo_name().to_ascii_lowercase();
+    pipe_ok && !e.tags.iter().any(|t| OTHER.contains(&t.as_str())) && !OTHER_NAMES.iter().any(|k| name.contains(k))
 }
 
 pub fn is_uncensored(e: &ModelEntry) -> bool {
@@ -167,20 +206,27 @@ pub fn is_uncensored(e: &ModelEntry) -> bool {
     UNCENSORED_WORDS.iter().any(|w| id.contains(w)) || e.tags.iter().any(|t| t == "uncensored" || t == "not-for-all-audiences")
 }
 
-/// Days since `createdAt` (ISO 8601). Parsed by hand to avoid a date crate.
-pub fn age_days(created: Option<&str>, now_unix: i64) -> f64 {
-    let Some(c) = created else { return 365.0 };
+/// Day number since 1970-01-01 of an ISO 8601 date ("2026-08-13T08:28:40.000Z").
+/// Parsed by hand (Howard Hinnant's days-from-civil) to avoid a date crate.
+pub fn created_day(created: Option<&str>) -> Option<i64> {
+    let c = created?;
     let p = |a: usize, b: usize| c.get(a..b).and_then(|s| s.parse::<i64>().ok());
-    let (Some(y), Some(m), Some(d)) = (p(0, 4), p(5, 7), p(8, 10)) else { return 365.0 };
-    // days from civil (Howard Hinnant's algorithm)
+    let (y, m, d) = (p(0, 4)?, p(5, 7)?, p(8, 10)?);
     let y2 = if m <= 2 { y - 1 } else { y };
     let era = y2.div_euclid(400);
     let yoe = y2 - era * 400;
     let mp = (m + 9) % 12;
     let doy = (153 * mp + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    ((now_unix / 86400 - days) as f64).max(0.0)
+    Some(era * 146097 + doe - 719468)
+}
+
+/// Days since `createdAt`; unknown dates count as a year old.
+pub fn age_days(created: Option<&str>, now_unix: i64) -> f64 {
+    match created_day(created) {
+        Some(day) => ((now_unix / 86400 - day) as f64).max(0.0),
+        None => 365.0,
+    }
 }
 
 /// Popularity: `(log10(downloads_30d) + 0.6·log10(likes)) × max(0.35, 0.5^(age_days/180))`.
@@ -201,18 +247,36 @@ pub fn canonical_key(e: &ModelEntry) -> String {
 
 /* ---------- families ---------- */
 
-/// Model families shown as filters on the start screen: (id, label, Hugging Face search terms).
-/// HF search matches words, so sub-brands need their own term.
-pub const FAMILIES: &[(&str, &str, &[&str])] = &[
-    ("gemma", "Gemma", &["gemma"]),
-    ("qwen", "Qwen", &["qwen"]),
-    ("glm", "GLM", &["glm"]),
-    ("deepseek", "DeepSeek", &["deepseek"]),
-    ("mistral", "Mistral", &["mistral", "ministral", "devstral", "magistral"]),
-    ("llama", "Llama", &["llama"]),
-    ("gpt-oss", "GPT-oss", &["gpt-oss"]),
-    ("nemotron", "Nemotron", &["nemotron"]),
+/// A model family on the start screen and the Hugging Face account of its maker.
+pub struct Family {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// HF search matches words, so sub-brands need their own term.
+    pub terms: &'static [&'static str],
+    pub maker: &'static str,
+    pub maker_label: &'static str,
+}
+
+pub const FAMILIES: &[Family] = &[
+    Family { id: "gemma", label: "Gemma", terms: &["gemma"], maker: "google", maker_label: "Google" },
+    Family { id: "qwen", label: "Qwen", terms: &["qwen"], maker: "Qwen", maker_label: "Qwen (Alibaba)" },
+    Family { id: "glm", label: "GLM", terms: &["glm"], maker: "zai-org", maker_label: "Z.ai" },
+    Family { id: "deepseek", label: "DeepSeek", terms: &["deepseek"], maker: "deepseek-ai", maker_label: "DeepSeek" },
+    Family { id: "mistral", label: "Mistral", terms: &["mistral", "ministral", "devstral", "magistral"], maker: "mistralai", maker_label: "Mistral AI" },
+    Family { id: "llama", label: "Llama", terms: &["llama"], maker: "meta-llama", maker_label: "Meta" },
+    Family { id: "gpt-oss", label: "GPT-oss", terms: &["gpt-oss"], maker: "openai", maker_label: "OpenAI" },
+    Family { id: "nemotron", label: "Nemotron", terms: &["nemotron"], maker: "nvidia", maker_label: "NVIDIA" },
 ];
+
+/// Author of the base model, e.g. "meta-llama" for a quant of `meta-llama/Llama-3.1-8B`.
+pub fn base_author(e: &ModelEntry) -> Option<&str> {
+    e.base_model().and_then(|b| b.split('/').next())
+}
+
+/// The model is from `maker`: uploaded by it, or a quant/finetune of its model.
+pub fn from_maker(e: &ModelEntry, maker: &str) -> bool {
+    e.author().eq_ignore_ascii_case(maker) || base_author(e).is_some_and(|a| a.eq_ignore_ascii_case(maker))
+}
 
 /// Family of a repo by name. Order matters: a "DeepSeek-R1-Distill-Qwen" is DeepSeek,
 /// a "Llama-Nemotron" is Nemotron.
@@ -260,13 +324,32 @@ pub fn default_sources() -> Vec<Source> {
         id: id.into(), name: name.into(), builtin, on, desc: desc.into(),
         comps: comps.map(|(official, finetune, unc)| Components { official, finetune, unc }),
     };
-    vec![
-        s("kcppt", "KoboldCpp templates", true, true, None, "Ready-made setups from hf.co/koboldcpp"),
-        s("labs", "Labs' own uploads", true, true, Some((true, false, false)), "Official uploads by the model makers"),
-        s("unsloth", "unsloth", false, true, Some((true, false, false)), "Official quants of new models"),
+    let mut v = vec![s("kcppt", "KoboldCpp templates", true, true, None, "Ready-made setups from hf.co/koboldcpp")];
+    // Model makers' own accounts (hf.co/google, hf.co/Qwen, …).
+    for f in FAMILIES {
+        v.push(s(f.maker, f.maker, true, true, Some((true, false, false)), &format!("{}: official {} uploads (hf.co/{})", f.maker_label, f.label, f.maker)));
+    }
+    v.extend([
+        s("unsloth", "unsloth", false, true, Some((true, false, false)), "Quants of new models, also for makers without GGUF uploads"),
         s("bartowski", "bartowski", false, false, Some((true, true, false)), "Official quants and community finetunes"),
         s("TheDrummer", "TheDrummer", false, false, Some((false, true, false)), "Roleplay and story finetunes"),
-    ]
+    ]);
+    v
+}
+
+/// Bring a saved source list up to date: built-in sources that are missing are added (enabled,
+/// after the ones already there), and the old combined "labs" entry is replaced by the makers.
+pub fn migrate_sources(mut list: Vec<Source>) -> Vec<Source> {
+    list.retain(|s| s.id != "labs");
+    let defaults = default_sources();
+    for (i, d) in defaults.iter().enumerate() {
+        if d.builtin && !list.iter().any(|s| s.id == d.id) {
+            // Insert after the previous default that exists, keeping the default order.
+            let pos = defaults[..i].iter().rev().find_map(|p| list.iter().position(|s| s.id == p.id)).map(|p| p + 1).unwrap_or(0);
+            list.insert(pos.min(list.len()), d.clone());
+        }
+    }
+    list
 }
 
 /// Valid Hugging Face user or organisation name.
@@ -294,6 +377,8 @@ pub struct RankOptions {
     /// Only original models (official uploads and faithful quants), no finetunes.
     pub official_only: bool,
     pub show_uncensored: bool,
+    #[serde(default)]
+    pub sort: Sort,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,7 +413,7 @@ pub struct RankResult {
 /// Filter by switches and sources, merge duplicates (higher source wins, then higher score),
 /// sort by score.
 pub fn rank(entries: &[ModelEntry], sources: &[Source], opts: RankOptions, now_unix: i64) -> RankResult {
-    let mut best: HashMap<String, Ranked> = HashMap::new();
+    let mut best: HashMap<String, (Ranked, f64)> = HashMap::new();
     let mut kept = 0usize;
     let mut seen = std::collections::HashSet::new();
     for e in entries {
@@ -363,16 +448,18 @@ pub fn rank(entries: &[ModelEntry], sources: &[Source], opts: RankOptions, now_u
             base_model: e.base_model().map(str::to_string),
             tags: e.tags.clone(),
         };
+        let metric = opts.sort.key(e);
         let key = canonical_key(e);
         match best.get(&key) {
-            Some(cur) if (cur.source, -cur.score) <= (r.source, -r.score) => {}
+            Some((cur, m)) if (cur.source, -m) <= (r.source, -metric) => {}
             _ => {
-                best.insert(key, r);
+                best.insert(key, (r, metric));
             }
         }
     }
-    let mut items: Vec<Ranked> = best.into_values().collect();
-    items.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut ranked: Vec<(Ranked, f64)> = best.into_values().collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let items: Vec<Ranked> = ranked.into_iter().map(|(r, _)| r).collect();
     RankResult { dupes: kept - items.len(), items }
 }
 
@@ -430,26 +517,60 @@ impl RepoFiles {
     }
 }
 
-/// Quant name in a file name: "Qwen3-8B-UD-Q4_K_XL.gguf" → ("Q4_K_XL", "UD-Q4_K_XL").
+/// Quant name in a file name: "Qwen3-8B-UD-Q4_K_XL.gguf" → ("Q4_K_XL", "UD-Q4_K_XL"),
+/// "gemma-4-E4B_q4_0-it.gguf" → ("Q4_0", "Q4_0"). The last quant-looking part wins.
 pub fn quant_of(file_name: &str) -> Option<(String, String)> {
     let stem = file_name.rsplit('/').next()?.trim_end_matches(".gguf");
     let stem = match crate::gguf::split_part(&format!("{stem}.gguf")) {
         Some(_) => &stem[..stem.len() - "-00001-of-00002".len()],
         None => stem,
     };
-    let upper = stem.to_ascii_uppercase();
-    let tokens: Vec<&str> = upper.split(['-', '.']).collect();
-    for (i, t) in tokens.iter().enumerate().rev() {
-        let t = *t;
-        let is_q = (t.starts_with('Q') || t.starts_with("IQ") || t.starts_with("TQ")) && t.chars().nth(if t.starts_with('Q') { 1 } else { 2 }).is_some_and(|c| c.is_ascii_digit())
-            || matches!(t, "F16" | "BF16" | "F32")
-            || t.starts_with("MXFP4");
-        if is_q {
-            let label = if i > 0 && tokens[i - 1] == "UD" { format!("UD-{t}") } else { t.to_string() };
-            return Some((t.to_string(), label));
+    let u = stem.to_ascii_uppercase();
+    let b = u.as_bytes();
+    let mut found: Option<(usize, usize)> = None;
+    for i in 0..b.len() {
+        if i > 0 && b[i - 1].is_ascii_alphanumeric() {
+            continue;
+        }
+        if let Some(len) = quant_at(&b[i..])
+            && b.get(i + len).is_none_or(|c| !c.is_ascii_alphanumeric())
+        {
+            found = Some((i, len));
         }
     }
-    None
+    let (i, len) = found?;
+    let q = u[i..i + len].to_string();
+    let label = if u[..i].ends_with("UD-") || u[..i].ends_with("UD_") { format!("UD-{q}") } else { q.clone() };
+    Some((q, label))
+}
+
+/// Length of a quant name at the start of `b` (uppercase): Q4_K_M, Q8_0, IQ2_XXS, TQ1_0,
+/// BF16, F16, F32, MXFP4(_MOE).
+fn quant_at(b: &[u8]) -> Option<usize> {
+    let s = std::str::from_utf8(b).ok()?;
+    for fixed in ["MXFP4_MOE", "MXFP4", "BF16", "F16", "F32"] {
+        if s.starts_with(fixed) {
+            return Some(fixed.len());
+        }
+    }
+    let (prefix, rest) = if let Some(r) = s.strip_prefix("IQ") { (2, r) } else if let Some(r) = s.strip_prefix("TQ") { (2, r) } else if let Some(r) = s.strip_prefix('Q') { (1, r) } else { return None };
+    let rb = rest.as_bytes();
+    if rb.len() < 3 || !rb[0].is_ascii_digit() || rb[1] != b'_' {
+        return None;
+    }
+    // After "Qn_": a digit (Q8_0), or letters (K, K_M, K_XL, XXS, NL, …) joined by '_'.
+    let mut n = 2;
+    if rb[2].is_ascii_digit() {
+        n = 3;
+    } else {
+        while n < rb.len() && (rb[n].is_ascii_uppercase() || (rb[n] == b'_' && rb.get(n + 1).is_some_and(|c| c.is_ascii_uppercase()))) {
+            n += 1;
+        }
+        if n == 2 {
+            return None;
+        }
+    }
+    Some(prefix + n)
 }
 
 /// Path without the split tag: "a/m-00002-of-00003.gguf" → "a/m.gguf".
@@ -471,7 +592,7 @@ pub fn parse_tree(entries: &[TreeEntry]) -> RepoFiles {
     for e in paths {
         let file = e.path.rsplit('/').next().unwrap_or(&e.path);
         let lower = file.to_ascii_lowercase();
-        if lower.starts_with("mmproj") {
+        if lower.contains("mmproj") {
             mmproj.push((e.path.clone(), e.size));
             continue;
         }
@@ -532,7 +653,7 @@ mod tests {
     fn age_and_score() {
         assert_eq!(age_days(Some("2026-11-05T00:00:00.000Z"), NOW), 0.0);
         assert_eq!(age_days(Some("2026-08-13T08:28:40.000Z"), NOW), 84.0);
-        let e = ModelEntry { id: "a/b".into(), likes: 999, downloads: 999_999, created_at: Some("2026-11-05".into()), tags: vec![], base_models: None, pipeline_tag: None };
+        let e = ModelEntry { id: "a/b".into(), likes: 999, downloads: 999_999, created_at: Some("2026-11-05".into()), tags: vec![], base_models: None, pipeline_tag: None, trending_score: None };
         assert!((score(&e, NOW) - (6.0 + 0.6 * 3.0)).abs() < 1e-6);
     }
 
@@ -566,14 +687,14 @@ mod tests {
         all.extend(list("hf-list-TheDrummer.json"));
         all.extend(list("hf-list-trending.json"));
         let mut sources = default_sources();
-        let r = rank(&all, &sources, RankOptions { official_only: true, show_uncensored: false }, NOW);
+        let r = rank(&all, &sources, RankOptions { official_only: true, show_uncensored: false, sort: Sort::Downloads }, NOW);
         assert!(!r.items.is_empty());
         assert!(r.items.iter().all(|i| i.kind != Kind::Finetune && !i.uncensored));
         assert!(r.items.iter().all(|i| i.author != "bartowski" && i.author != "TheDrummer"), "disabled sources");
-        assert!(r.items.windows(2).all(|w| w[0].score >= w[1].score));
+        assert!(r.items.windows(2).all(|w| w[0].downloads >= w[1].downloads), "sorted by downloads");
         // Enable TheDrummer finetunes and show all models
         for s in &mut sources { if s.id == "TheDrummer" { s.on = true; } }
-        let r2 = rank(&all, &sources, RankOptions { official_only: false, show_uncensored: false }, NOW);
+        let r2 = rank(&all, &sources, RankOptions { official_only: false, show_uncensored: false, sort: Sort::Downloads }, NOW);
         assert!(r2.items.iter().any(|i| i.author == "TheDrummer"));
     }
 
@@ -583,11 +704,12 @@ mod tests {
             id: id.into(), likes: 10, downloads: dl, created_at: Some("2026-10-01".into()), tags: vec![],
             base_models: Some(BaseModels { relation: Some("quantized".into()), models: vec![BaseModelRef { id: base.into() }] }),
             pipeline_tag: None,
+            trending_score: None,
         };
         let entries = vec![mk("bartowski/Qwen_Qwen3-8B-GGUF", "Qwen/Qwen3-8B", 900_000), mk("unsloth/Qwen3-8B-GGUF", "Qwen/Qwen3-8B", 100)];
         let mut sources = default_sources();
         for s in &mut sources { if s.id == "bartowski" { s.on = true; } }
-        let r = rank(&entries, &sources, RankOptions { official_only: true, show_uncensored: false }, NOW);
+        let r = rank(&entries, &sources, RankOptions { official_only: true, show_uncensored: false, sort: Sort::Downloads }, NOW);
         assert_eq!(r.items.len(), 1);
         assert_eq!(r.items[0].author, "unsloth", "unsloth is above bartowski in the list");
         assert_eq!(r.dupes, 1);
@@ -610,6 +732,15 @@ mod tests {
     }
 
     #[test]
+    fn mmproj_anywhere_in_name() {
+        let te = |p: &str, s| TreeEntry { kind: "file".into(), path: p.into(), size: s };
+        let f = parse_tree(&[te("gemma-4-E4B-it-mmproj.gguf", 9), te("gemma-4-E4B_q4_0-it.gguf", 48)]);
+        assert_eq!(f.quants.len(), 1);
+        assert_eq!(f.quants[0].quant, "Q4_0");
+        assert_eq!(f.mmproj.len(), 1);
+    }
+
+    #[test]
     fn helper_folders_and_non_text_models_are_skipped() {
         let te = |p: &str, s| TreeEntry { kind: "file".into(), path: p.into(), size: s };
         let f = parse_tree(&[
@@ -621,11 +752,14 @@ mod tests {
         ]);
         assert_eq!(f.quants.len(), 1);
         assert_eq!((f.quants[0].quant.as_str(), f.quants[0].size, f.quants[0].files.len()), ("IQ1_M", 30, 2));
-        let mut e = ModelEntry { id: "unsloth/Qwen-Image-GGUF".into(), likes: 1, downloads: 1, created_at: None, tags: vec!["text-to-image".into()], base_models: None, pipeline_tag: None };
+        let mut e = ModelEntry { id: "unsloth/Qwen-Image-GGUF".into(), likes: 1, downloads: 1, created_at: None, tags: vec!["text-to-image".into()], base_models: None, pipeline_tag: None, trending_score: None };
         assert!(!is_text_model(&e));
         e.tags.clear();
         e.pipeline_tag = Some("image-text-to-text".into());
         assert!(is_text_model(&e));
+        e.id = "nvidia/Nemotron-3-Diarization".into();
+        e.pipeline_tag = None;
+        assert!(!is_text_model(&e));
     }
 
     #[test]
@@ -635,6 +769,41 @@ mod tests {
         assert_eq!(quant_of("BF16/Qwen3.8-27B-BF16-00001-of-00002.gguf").unwrap().0, "BF16");
         assert_eq!(quant_of("model.Q8_0.gguf").unwrap().0, "Q8_0");
         assert_eq!(quant_of("readme.gguf"), None);
+        assert_eq!(quant_of("gemma-4-E4B_q4_0-it.gguf").unwrap().0, "Q4_0");
+        assert_eq!(quant_of("gemma-4-12b-it-qat-q4_0.gguf").unwrap().0, "Q4_0");
+        assert_eq!(quant_of("Qwen3-8B-UD-Q4_K_XL.gguf").unwrap(), ("Q4_K_XL".into(), "UD-Q4_K_XL".into()));
+        assert_eq!(quant_of("gpt-oss-20b-MXFP4.gguf").unwrap().0, "MXFP4");
+        assert_eq!(quant_of("Llama-3.1-8B-Instruct-Q4_K_M-00001-of-00002.gguf").unwrap().0, "Q4_K_M");
+        assert_eq!(quant_of("Qwen3-30B-A3B-Q8_0.gguf").unwrap().0, "Q8_0");
+    }
+
+    #[test]
+    fn sources_get_makers_and_lose_labs() {
+        let old = vec![
+            Source { id: "kcppt".into(), name: "KoboldCpp templates".into(), builtin: true, on: true, comps: None, desc: String::new() },
+            Source { id: "labs".into(), name: "Labs' own uploads".into(), builtin: true, on: true, comps: Some(Components { official: true, finetune: false, unc: false }), desc: String::new() },
+            Source { id: "bartowski".into(), name: "bartowski".into(), builtin: false, on: true, comps: Some(Components { official: true, finetune: true, unc: false }), desc: String::new() },
+        ];
+        let new = migrate_sources(old);
+        let ids: Vec<&str> = new.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(&ids[..3], ["kcppt", "google", "Qwen"]);
+        assert!(!ids.contains(&"labs") && ids.contains(&"nvidia") && ids.contains(&"bartowski"));
+        assert!(new.iter().find(|s| s.id == "google").unwrap().on);
+        assert_eq!(migrate_sources(new.clone()), new, "idempotent");
+    }
+
+    #[test]
+    fn sort_orders() {
+        let e = |id: &str, dl, likes, created: &str, tr| ModelEntry { id: id.into(), likes, downloads: dl, created_at: Some(created.into()), tags: vec![], base_models: None, pipeline_tag: None, trending_score: Some(tr) };
+        let a = e("a/a", 10, 300, "2026-01-01", 5.0);
+        let b = e("b/b", 900, 10, "2026-10-01", 1.0);
+        assert!(Sort::Downloads.key(&b) > Sort::Downloads.key(&a));
+        assert!(Sort::Likes.key(&a) > Sort::Likes.key(&b));
+        assert!(Sort::Newest.key(&b) > Sort::Newest.key(&a));
+        assert!(Sort::Trending.key(&a) > Sort::Trending.key(&b));
+        let r = |id: &str| ModelEntry { id: id.into(), likes: 0, downloads: 0, created_at: None, tags: vec![], base_models: Some(BaseModels { relation: Some("quantized".into()), models: vec![BaseModelRef { id: "meta-llama/Llama-3.1-8B".into() }] }), pipeline_tag: None, trending_score: None };
+        assert!(from_maker(&r("unsloth/Llama-3.1-8B-GGUF"), "meta-llama"));
+        assert!(!from_maker(&r("unsloth/Llama-3.1-8B-GGUF"), "google"));
     }
 
     #[test]

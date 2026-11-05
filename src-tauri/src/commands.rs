@@ -339,7 +339,21 @@ fn hf(state: &AppState) -> crate::hf::client::Hf<'_> {
 
 #[tauri::command]
 pub async fn templates(state: State<'_, AppState>) -> CmdResult<Vec<crate::hf::templates::Template>> {
-    Ok(crate::hf::templates::list(&hf(&state)).await)
+    let models = state.settings().models_dir(&state.dirs);
+    let mut list = crate::hf::templates::list(&hf(&state)).await;
+    for t in &mut list {
+        t.downloaded = !t.files.is_empty() && t.files.iter().all(|(_, url, size)| local_file(&models, url, *size).is_some());
+    }
+    Ok(list)
+}
+
+/// Where a URL's file is (or would be) on disk if it is already complete: the per-repo folder,
+/// or the models folder itself for files downloaded by older versions.
+pub fn local_file(models: &std::path::Path, url: &str, size: Option<u64>) -> Option<PathBuf> {
+    let name = download::file_name_from_url(url);
+    [models.join(download::repo_subdir(url)).join(&name), models.join(&name)]
+        .into_iter()
+        .find(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file() && size.is_none_or(|s| m.len() == s)))
 }
 
 /// Fit for many (size, context) pairs at once.
@@ -366,6 +380,8 @@ pub struct PopularItem {
     /// Download URLs for the picked quant (several for split files).
     pub urls: Vec<String>,
     pub mmproj: Option<(String, u64)>,
+    /// All files are already on this computer: the button says Start.
+    pub downloaded: bool,
 }
 
 #[derive(Serialize)]
@@ -382,16 +398,14 @@ fn now_unix() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-/// Candidates from all enabled sources; with a family, searched by its term.
-async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], terms: &[&str]) -> (Vec<crate::hf::ModelEntry>, Vec<String>) {
+/// Candidates from all enabled sources in the chosen order; with a family, searched by its terms.
+async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], terms: &[&str], sort: crate::hf::Sort) -> (Vec<crate::hf::ModelEntry>, Vec<String>) {
     let terms: Vec<Option<&str>> = if terms.is_empty() { vec![None] } else { terms.iter().map(|t| Some(*t)).collect() };
     let pairs: Vec<(&crate::hf::Source, Option<&str>)> = sources.iter().filter(|s| s.on && s.comps.is_some()).flat_map(|s| terms.iter().map(move |t| (s, *t))).collect();
     let jobs = pairs.into_iter().map(|(s, term)| async move {
-        let r = match (s.id.as_str(), term) {
-            ("labs", None) => h.trending(100).await,
-            ("labs", Some(t)) => h.trending_search(t, 60).await,
-            (_, None) => h.by_author(&s.name, 40).await,
-            (_, Some(t)) => h.by_author_search(&s.name, t, 30).await,
+        let r = match term {
+            None => h.by_author(&s.name, sort, 40).await,
+            Some(t) => h.by_author_search(&s.name, t, sort, 30).await,
         };
         (s.name.clone(), r)
     });
@@ -407,7 +421,7 @@ async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], te
 }
 
 /// Pick a quant for each candidate (in order) until `want` fit; counts the ones too big.
-async fn with_picks(h: &crate::hf::client::Hf<'_>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
+async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
     let files = futures_util::future::join_all(cands.iter().map(|m| h.files(&m.id))).await;
     let mut items: Vec<PopularItem> = Vec::new();
     let mut too_big = 0;
@@ -418,9 +432,12 @@ async fn with_picks(h: &crate::hf::client::Hf<'_>, cands: Vec<crate::hf::Ranked>
             continue;
         };
         let Some(q) = f.quant(&pick.quant) else { continue };
-        let urls = q.files.iter().map(|p| crate::hf::resolve_url(&m.id, p)).collect();
+        let urls: Vec<String> = q.files.iter().map(|p| crate::hf::resolve_url(&m.id, p)).collect();
         let mmproj = f.best_mmproj().map(|(p, s)| (crate::hf::resolve_url(&m.id, p), *s));
-        items.push(PopularItem { model: m, pick, urls, mmproj });
+        let single = urls.len() == 1;
+        let downloaded = urls.iter().all(|u| local_file(models, u, single.then_some(pick.size)).is_some())
+            && mmproj.as_ref().is_none_or(|(u, s)| local_file(models, u, Some(*s)).is_some());
+        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded });
     }
     // Keep ranking order, but a normal quant beats a squeezed fallback.
     items.sort_by_key(|i| i.pick.fallback);
@@ -428,27 +445,36 @@ async fn with_picks(h: &crate::hf::client::Hf<'_>, cands: Vec<crate::hf::Ranked>
     (items, too_big)
 }
 
-/// `family`: None = "Top" (the best fitting model of each family), else that family's list.
+/// `family`: None = "Top": for each maker whose source is on, its best model that fits this PC
+/// (from the maker's own account, or a quant of its model). Else that family's whole list.
 #[tauri::command]
 pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::RankOptions, machine: Machine, family: Option<String>) -> CmdResult<PopularResult> {
     let h = hf(&state);
     let sources = state.settings().sources;
+    let models = state.settings().models_dir(&state.dirs);
     let now = now_unix();
     if let Some(fam) = family {
-        let (_, _, terms) = crate::hf::FAMILIES.iter().find(|f| f.0 == fam).ok_or("Unknown model family")?;
-        let (entries, errors) = gather(&h, &sources, terms).await;
+        let f = crate::hf::FAMILIES.iter().find(|f| f.id == fam).ok_or("Unknown model family")?;
+        let (entries, errors) = gather(&h, &sources, f.terms, options.sort).await;
         let ranked = crate::hf::rank(&entries, &sources, options, now);
         let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(fam.as_str())).take(30).collect();
-        let (items, too_big) = with_picks(&h, cands, &machine, 20).await;
+        let (items, too_big) = with_picks(&h, &models, cands, &machine, 20).await;
         return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors });
     }
-    let per_family = crate::hf::FAMILIES.iter().map(|(id, _, terms)| {
-        let (h, sources, machine) = (&h, &sources, &machine);
+    let maker_on = |m: &str| sources.iter().any(|s| s.on && s.name.eq_ignore_ascii_case(m));
+    let per_family = crate::hf::FAMILIES.iter().filter(|f| maker_on(f.maker)).map(|f| {
+        let (h, sources, machine, models) = (&h, &sources, &machine, &models);
         async move {
-            let (entries, errors) = gather(h, sources, terms).await;
+            let (entries, errors) = gather(h, sources, f.terms, options.sort).await;
             let ranked = crate::hf::rank(&entries, sources, options, now);
-            let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(*id)).take(12).collect();
-            let (items, _) = with_picks(h, cands, machine, 1).await;
+            let is_maker = |m: &crate::hf::Ranked| {
+                m.author.eq_ignore_ascii_case(f.maker) || m.base_model.as_deref().and_then(|b| b.split('/').next()).is_some_and(|a| a.eq_ignore_ascii_case(f.maker))
+            };
+            let mut cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(f.id) && is_maker(m)).collect();
+            // The maker's own uploads first (in the chosen order), quants of its models after.
+            cands.sort_by_key(|m| m.kind != crate::hf::Kind::Official);
+            cands.truncate(12);
+            let (items, _) = with_picks(h, models, cands, machine, 1).await;
             (items, errors)
         }
     });
@@ -511,10 +537,10 @@ pub async fn search_models(state: State<'_, AppState>, query: String) -> CmdResu
         .collect())
 }
 
-/// Model families for the start screen filter row: (id, label).
+/// Model families for the start screen filter row: (id, label, maker account).
 #[tauri::command]
-pub fn model_families() -> Vec<(String, String)> {
-    crate::hf::FAMILIES.iter().map(|(id, label, _)| (id.to_string(), label.to_string())).collect()
+pub fn model_families() -> Vec<(String, String, String)> {
+    crate::hf::FAMILIES.iter().map(|f| (f.id.to_string(), f.label.to_string(), f.maker.to_string())).collect()
 }
 
 #[tauri::command]
@@ -570,7 +596,7 @@ pub async fn download_files(app: AppHandle, state: State<'_, AppState>, download
     let result: CmdResult<()> = async {
         for (req, url, size) in &jobs {
             let name = download::file_name_from_url(url);
-            let dest = models.join(download::repo_subdir(url)).join(&name);
+            let dest = local_file(&models, url, *size).unwrap_or_else(|| models.join(download::repo_subdir(url)).join(&name));
             let (app2, id2, name2) = (app.clone(), id.clone(), name.clone());
             let start = base;
             let path = download::download_retry(&state.http, download::Request { url, dest: &dest, size: *size, sha256: None }, &cancel, move |p| {

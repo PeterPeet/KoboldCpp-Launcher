@@ -19,7 +19,7 @@ export function mockTemplates(): Template[] {
     id: t.id, collection: "newbie-templates", url: `https://huggingface.co/koboldcpp/newbie-templates/resolve/main/${t.id}.kcppt`,
     tier: t.tier, title: t.use, parts: t.parts, size: t.size * GB, context: t.ctx ? 24576 : 8192,
     config: { model_param: `https://huggingface.co/example/${t.id}.gguf`, contextsize: 8192, istemplate: true },
-    files: [["model_param", `https://huggingface.co/example/${t.id}.gguf`, t.size * GB]],
+    files: [["model_param", `https://huggingface.co/example/${t.id}.gguf`, t.size * GB]], downloaded: t.id === "MidSpec-Chatbot",
   }));
 }
 
@@ -43,7 +43,7 @@ const toRanked = (x: (typeof MODELS)[number], source: number): Ranked => ({
   score: (Math.log10(x.dl + 1) + 0.6 * Math.log10(x.likes + 1)) * Math.max(0.35, 0.5 ** (x.age / 180)),
 });
 
-export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean }, m: Machine, sources: Source[], family: string | null): PopularResult {
+export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean; sort: string }, m: Machine, sources: Source[], family: string | null): PopularResult {
   const on = sources.filter((s) => s.on && s.comps);
   let tooBig = 0;
   const best = new Map<string, PopularItem>();
@@ -56,11 +56,12 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean 
     const p = pick(x.quants, m);
     if (!p) { tooBig++; continue; }
     kept++;
-    const item: PopularItem = { ...toRanked(x, si), pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: null };
+    const item: PopularItem = { ...toRanked(x, si), pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: null, downloaded: x.repo.includes("LFM3-1.7B-GGUF") };
     const cur = best.get(x.base);
     if (!cur || si < cur.source) best.set(x.base, item);
   }
-  let items = [...best.values()].sort((a, b) => b.score - a.score);
+  const key = (i: PopularItem) => (o.sort === "likes" ? i.likes : o.sort === "newest" ? -i.ageDays : o.sort === "trending" ? i.score : i.downloads);
+  let items = [...best.values()].sort((a, b) => key(b) - key(a));
   if (family) items = items.filter((i) => i.family === family);
   else {
     const seen = new Set<string>();

@@ -210,6 +210,16 @@ pub fn pick_quant(quants: &[(String, u64)], context: u32, vram: u64, ram: u64, u
             return Some(mk(q, s, fit(s), false));
         }
     }
+    // Other 4-bit quants (e.g. Google's QAT Q4_0 uploads) are a normal choice, not a fallback.
+    let four_bit = |n: &str| {
+        let u = n.to_ascii_uppercase();
+        (u.starts_with("Q4") || u.starts_with("IQ4") || u.starts_with("MXFP4")) && u != "Q4_K_M"
+    };
+    let mut fours: Vec<&(String, u64)> = quants.iter().filter(|(n, _)| four_bit(n)).collect();
+    fours.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
+    if let Some((n, s)) = fours.iter().find(|(_, s)| matches!(fit(*s), Fit::Full | Fit::Cpu)) {
+        return Some(mk(n, *s, fit(*s), false));
+    }
     if let Some(s) = find("Q4_K_M").filter(|&s| fit(s) == Fit::Partial) {
         return Some(mk("Q4_K_M", s, Fit::Partial, false));
     }
@@ -217,7 +227,7 @@ pub fn pick_quant(quants: &[(String, u64)], context: u32, vram: u64, ram: u64, u
     // Only quants smaller than Q4_K_M count as fallback (never F16/BF16 or Q5+).
     let smaller = |n: &str| {
         let u = n.to_ascii_uppercase();
-        !(u.contains("F16") || u.contains("F32") || u.starts_with("Q5") || u.starts_with("Q6") || u.starts_with("Q8") || PREFERRED.contains(&u.as_str()))
+        !(u.contains("F16") || u.contains("F32") || u.starts_with("Q5") || u.starts_with("Q6") || u.starts_with("Q8") || PREFERRED.contains(&u.as_str()) || four_bit(&u))
     };
     let mut rest: Vec<&(String, u64)> = quants.iter().filter(|(n, _)| smaller(n)).collect();
     rest.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
@@ -295,6 +305,9 @@ mod tests {
         let p = pick_quant(&q(&[("Q4_K_M", 118.0), ("Q2_K", 64.0)]), 16384, 24 * G, 128 * G, false).unwrap();
         assert_eq!((p.quant.as_str(), p.fit, p.fallback), ("Q2_K", Fit::Partial, true));
         assert!(pick_quant(&q(&[("Q4_K_M", 118.0)]), 16384, 8 * G, 16 * G, false).is_none());
+        // Google-style single QAT Q4_0 upload: a normal pick.
+        let p = pick_quant(&q(&[("Q4_0", 2.5)]), 16384, 8 * G, 16 * G, false).unwrap();
+        assert_eq!((p.quant.as_str(), p.fallback), ("Q4_0", false));
         // A small BF16 helper is never a fallback for a huge model.
         assert!(pick_quant(&q(&[("Q4_K_M", 118.0), ("BF16", 7.9)]), 16384, 8 * G, 16 * G, false).is_none());
     }

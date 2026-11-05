@@ -25,6 +25,8 @@ pub struct Template {
     pub config: Map<String, Value>,
     /// Every file it downloads: (config key, URL, size if known).
     pub files: Vec<(String, String, Option<u64>)>,
+    /// All files are already on this computer.
+    pub downloaded: bool,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +117,7 @@ pub async fn list(hf: &Hf<'_>) -> Vec<Template> {
                 size,
                 config: cfg.map().clone(),
                 files,
+                downloaded: false,
                 id,
             });
         }

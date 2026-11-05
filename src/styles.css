@@ -33,6 +33,10 @@ button:hover{background:var(--panel)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 button.primary:hover{filter:brightness(1.07)}
 button.ghost{border-color:transparent;background:transparent}
+button.go-start{background:var(--ok);border-color:var(--ok);color:#fff}
+button.go-start:hover{filter:brightness(1.08);background:var(--ok)}
+.sortlbl{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--fg-2)}
+.sortlbl select{border:1px solid var(--line-2);border-radius:8px;padding:4px 8px;background:var(--win);font-size:13px}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mono{font-family:var(--f-mono)}
 .note{font-size:12px;color:var(--fg-3);margin:0 0 10px}

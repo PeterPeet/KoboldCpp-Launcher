@@ -289,7 +289,7 @@ function renderLibGrid() {
         h("button", { class: "ghost", onclick: () => { L.confirm = null; renderLibGrid(); } }, "Keep")));
     else
       acts.append(
-        h("button", { class: running ? "" : "primary", onclick: () => (running ? stop() : startModel(m)) }, running ? "Stop" : "Start"),
+        h("button", { class: running ? "" : "go-start", onclick: () => (running ? stop() : startModel(m)) }, running ? "Stop" : "Start"),
         h("button", { onclick: () => moveModel(m) }, "Move…"),
         h("button", { class: "ghost", onclick: () => { L.confirm = m.path; renderLibGrid(); } }, "Remove"));
     const f = fits[m.path];
