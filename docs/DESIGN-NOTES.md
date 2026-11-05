@@ -170,6 +170,11 @@ First full version built in six phases (commits on `main`). Decisions made on th
   weights once: time = GPU share ÷ (GPU GB/s × efficiency) + CPU share ÷ (RAM GB/s × 0.5) + a
   small fixed cost; efficiency 0.7 (discrete GPU) / 0.6 (Apple). Bandwidth per GPU from a table
   of known models (`hardware::bandwidth_of`); MoE uses the active share from names like "A3B".
+  RAM bandwidth: Apple Silicon from the chip table; otherwise from the reported memory type,
+  rate and module count (Windows `Win32_PhysicalMemory`, Linux `dmidecode -t 17` (root only),
+  Intel Macs `system_profiler SPMemoryDataType`): MT/s × 8 bytes × channels (desktop max 2,
+  Threadripper/Xeon/EPYC max 8; soldered LPDDR = 128-bit bus). Unknown → 60 GB/s. The CPU chip
+  shows the type, e.g. "32 GB DDR4-3200 RAM".
   Calibrated on an M2 (4B Q4 ≈ 15–20 t/s; measured 13.3) and RTX 4090 (8B Q4 ≈ 110 t/s).
   While a model runs, `/api/extra/perf` `last_eval_speed` is recorded per model file (answers of
   16+ tokens) and shown as "measured" instead of the estimate. Library sorts by speed (measured

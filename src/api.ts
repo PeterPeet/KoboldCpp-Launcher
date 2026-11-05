@@ -17,7 +17,7 @@ export type Backend =
 export interface Gpu { index: number; name: string; api: "cuda" | "rocm" | "vulkan" | "metal"; vram: number; vramFree: number | null; discrete: boolean; bandwidth: number | null }
 export interface HardwareInfo {
   os: string; arch: string; cpuName: string; logicalCpus: number; defaultThreads: number; avx2: boolean | null;
-  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; ramBandwidth: number; suggestedBackend: Backend; tier: "low" | "mid" | "high";
+  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; ramBandwidth: number; ramType: string | null; suggestedBackend: Backend; tier: "low" | "mid" | "high";
 }
 export interface InstalledBinary { path: string; version: string | null; asset: string | null }
 export interface BinaryStatus { installed: InstalledBinary | null; present: boolean; asset: string | null }
@@ -139,6 +139,7 @@ const mockHardware: HardwareInfo = {
     { index: 1, name: "NVIDIA GeForce RTX 3060", api: "cuda", vram: 12 * GB, vramFree: 11.5 * GB, discrete: true, bandwidth: 360 },
   ],
   ramBandwidth: 60,
+  ramType: null,
   suggestedBackend: { kind: "cuda", gpu: null, lowvram: false, mmq: true }, tier: "high",
 };
 

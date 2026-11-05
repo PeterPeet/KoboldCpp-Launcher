@@ -173,7 +173,7 @@ mod tests {
             os: "x".into(), arch: "x".into(), cpu_name: String::new(), logical_cpus: 8, default_threads: 3, avx2,
             ram_total: 0, ram_available: 0, unified_memory: false,
             gpus: api.map(|api| vec![Gpu { index: 0, name: "g".into(), api, vram: 8 << 30, vram_free: None, discrete: true, bandwidth: None }]).unwrap_or_default(),
-            ram_bandwidth: 60.0,
+            ram_bandwidth: 60.0, ram_type: None,
             suggested_backend: Backend::Auto, tier: Tier::Low,
         }
     }

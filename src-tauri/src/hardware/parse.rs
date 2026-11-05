@@ -113,6 +113,142 @@ pub fn macos_displays(json: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Installed memory as the system reports it: type, transfer rate, number of modules.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RamModules {
+    /// "DDR4", "DDR5", "LPDDR5", ...
+    pub kind: Option<String>,
+    /// Transfer rate in MT/s (what is sold as "DDR4 3200").
+    pub mts: Option<u32>,
+    /// Populated modules (memory sticks or soldered packages).
+    pub modules: u32,
+}
+
+impl RamModules {
+    /// "DDR4-3200", or just "LPDDR5" when the speed is unknown.
+    pub fn label(&self) -> Option<String> {
+        let kind = self.kind.as_deref()?;
+        Some(match self.mts {
+            Some(m) => format!("{kind}-{m}"),
+            None => kind.to_string(),
+        })
+    }
+
+    /// Peak bandwidth in GB/s: rate × bus width. A memory channel is 64 bits (8 bytes); desktop
+    /// CPUs have two channels, workstation and server CPUs more. Soldered LPDDR in laptops is
+    /// almost always a 128-bit bus, however many packages the system lists.
+    pub fn bandwidth(&self, cpu_name: &str) -> Option<f64> {
+        let mts = f64::from(self.mts?);
+        let kind = self.kind.as_deref().unwrap_or("");
+        let bytes = if kind.starts_with("LPDDR") {
+            16.0
+        } else {
+            let server = ["Threadripper", "Xeon", "EPYC"].iter().any(|n| cpu_name.contains(n));
+            let channels = self.modules.clamp(1, if server { 8 } else { 2 });
+            8.0 * f64::from(channels)
+        };
+        Some(mts * bytes / 1000.0)
+    }
+}
+
+/// Some systems report the clock (MHz) instead of the transfer rate (MT/s): half the number.
+fn fix_rate(kind: &str, value: u32) -> u32 {
+    let lowest = match kind {
+        "DDR3" | "LPDDR3" => 800,
+        "DDR4" | "LPDDR4" | "LPDDR4X" => 1600,
+        "DDR5" | "LPDDR5" | "LPDDR5X" => 3200,
+        _ => 0,
+    };
+    if value > 0 && value < lowest { value * 2 } else { value }
+}
+
+/// SMBIOS memory type codes (Windows `Win32_PhysicalMemory.SMBIOSMemoryType`).
+fn smbios_kind(code: u64) -> Option<&'static str> {
+    Some(match code {
+        18 => "DDR",
+        19 => "DDR2",
+        24 => "DDR3",
+        26 => "DDR4",
+        27 => "LPDDR",
+        28 => "LPDDR2",
+        29 => "LPDDR3",
+        30 => "LPDDR4",
+        34 => "DDR5",
+        35 => "LPDDR5",
+        _ => return None,
+    })
+}
+
+fn summarize(list: Vec<(Option<String>, Option<u32>)>) -> Option<RamModules> {
+    if list.is_empty() {
+        return None;
+    }
+    let kind = list.iter().find_map(|(k, _)| k.clone());
+    // Mixed modules all run at the slowest one's rate.
+    let mts = list.iter().filter_map(|(_, m)| *m).filter(|&m| m > 0).min().map(|m| fix_rate(kind.as_deref().unwrap_or(""), m));
+    Some(RamModules { kind, mts, modules: list.len() as u32 })
+}
+
+/// Windows: `Get-CimInstance Win32_PhysicalMemory | Select-Object SMBIOSMemoryType,ConfiguredClockSpeed,Speed | ConvertTo-Json`
+/// (one object for one module, an array for several).
+pub fn windows_memory(json: &str) -> Option<RamModules> {
+    let v: serde_json::Value = serde_json::from_str(json.trim()).ok()?;
+    let items = match v {
+        serde_json::Value::Array(a) => a,
+        o @ serde_json::Value::Object(_) => vec![o],
+        _ => return None,
+    };
+    summarize(
+        items
+            .iter()
+            .map(|m| {
+                let kind = m["SMBIOSMemoryType"].as_u64().and_then(smbios_kind).map(str::to_string);
+                let speed = m["ConfiguredClockSpeed"].as_u64().filter(|&s| s > 0).or(m["Speed"].as_u64());
+                (kind, speed.map(|s| s as u32))
+            })
+            .collect(),
+    )
+}
+
+/// Linux: `dmidecode -t 17` (needs root; without it there is no output and we keep the default).
+pub fn dmidecode_memory(out: &str) -> Option<RamModules> {
+    let mut list = vec![];
+    for block in out.split("Memory Device").skip(1) {
+        let field = |name: &str| {
+            block.lines().map(str::trim).find_map(|l| l.strip_prefix(name).and_then(|r| r.strip_prefix(':')).map(str::trim))
+        };
+        let size = field("Size").unwrap_or("");
+        if size.is_empty() || size.starts_with("No Module") || size.starts_with("Not Installed") {
+            continue;
+        }
+        let kind = field("Type").filter(|t| !t.is_empty() && *t != "Unknown" && *t != "Other").map(str::to_string);
+        let rate = |name| field(name).and_then(|s| s.split_whitespace().next()?.parse::<u32>().ok());
+        list.push((kind, rate("Configured Memory Speed").or(rate("Configured Clock Speed")).or(rate("Speed"))));
+    }
+    summarize(list)
+}
+
+/// macOS: `system_profiler SPMemoryDataType -json`. Apple Silicon lists one entry with the type
+/// only; Intel Macs list each slot with type and speed ("2667 MHz", which is the rate in MT/s).
+pub fn macos_memory(json: &str) -> Option<RamModules> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let top = v["SPMemoryDataType"].as_array()?;
+    let mut list = vec![];
+    for entry in top {
+        let slots = entry["_items"].as_array().cloned().unwrap_or_else(|| vec![entry.clone()]);
+        for s in slots {
+            let size = s["dimm_size"].as_str().or(s["SPMemoryDataType"].as_str()).unwrap_or("");
+            if size.is_empty() || size.eq_ignore_ascii_case("empty") {
+                continue;
+            }
+            let kind = s["dimm_type"].as_str().filter(|t| !t.eq_ignore_ascii_case("empty")).map(str::to_string);
+            let mts = s["dimm_speed"].as_str().and_then(|x| x.split_whitespace().next()?.parse().ok());
+            list.push((kind, mts));
+        }
+    }
+    summarize(list)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +295,42 @@ mod tests {
         let json = r#"{"SPDisplaysDataType":[{"_name":"Apple M2","sppci_cores":"10","sppci_model":"Apple M2","spdisplays_vendor":"sppci_vendor_Apple"}]}"#;
         assert_eq!(macos_displays(json), ["Apple M2"]);
         assert!(macos_displays("not json").is_empty());
+    }
+
+    #[test]
+    fn windows_ddr4_dual_channel() {
+        let json = r#"[{"SMBIOSMemoryType":26,"ConfiguredClockSpeed":3200,"Speed":3600},{"SMBIOSMemoryType":26,"ConfiguredClockSpeed":3200,"Speed":3600}]"#;
+        let r = windows_memory(json).unwrap();
+        assert_eq!(r.label().as_deref(), Some("DDR4-3200"));
+        assert_eq!(r.bandwidth("AMD Ryzen 7 5800X"), Some(51.2));
+        // One stick: single channel.
+        let one = windows_memory(r#"{"SMBIOSMemoryType":34,"ConfiguredClockSpeed":2400,"Speed":4800}"#).unwrap();
+        assert_eq!(one.label().as_deref(), Some("DDR5-4800"), "clock in MHz is doubled to MT/s");
+        assert_eq!(one.bandwidth("Intel Core i5"), Some(38.4));
+        // Four sticks on a desktop CPU are still two channels.
+        let four = RamModules { kind: Some("DDR5".into()), mts: Some(6000), modules: 4 };
+        assert_eq!(four.bandwidth("AMD Ryzen 9 7950X"), Some(96.0));
+        assert_eq!(four.bandwidth("AMD Ryzen Threadripper 7970X"), Some(192.0));
+        let lp = RamModules { kind: Some("LPDDR5".into()), mts: Some(6400), modules: 8 };
+        assert_eq!(lp.bandwidth("AMD Ryzen 7 7840U"), Some(102.4));
+    }
+
+    #[test]
+    fn linux_dmidecode() {
+        let out = "Handle 0x0040, DMI type 17, 92 bytes\nMemory Device\n\tSize: 16 GB\n\tType: DDR4\n\tSpeed: 3600 MT/s\n\tConfigured Memory Speed: 3200 MT/s\n\nHandle 0x0041, DMI type 17, 92 bytes\nMemory Device\n\tSize: No Module Installed\n\tType: Unknown\n\tSpeed: Unknown\n\nHandle 0x0042, DMI type 17, 92 bytes\nMemory Device\n\tSize: 16 GB\n\tType: DDR4\n\tSpeed: 3600 MT/s\n\tConfigured Memory Speed: 3200 MT/s\n";
+        let r = dmidecode_memory(out).unwrap();
+        assert_eq!((r.label().as_deref(), r.modules), (Some("DDR4-3200"), 2));
+        assert!(dmidecode_memory("# dmidecode 3.5\n/sys/firmware/dmi/tables/smbios_entry_point: Permission denied\n").is_none());
+    }
+
+    #[test]
+    fn macos_memory_types() {
+        let apple = r#"{"SPMemoryDataType":[{"dimm_manufacturer":"Hynix","dimm_type":"LPDDR5","SPMemoryDataType":"8 GB"}]}"#;
+        let r = macos_memory(apple).unwrap();
+        assert_eq!((r.label().as_deref(), r.mts), (Some("LPDDR5"), None));
+        let intel = r#"{"SPMemoryDataType":[{"_name":"Memory Slots","_items":[{"_name":"DIMM0","dimm_size":"16 GB","dimm_speed":"2667 MHz","dimm_type":"DDR4"},{"_name":"DIMM1","dimm_size":"16 GB","dimm_speed":"2667 MHz","dimm_type":"DDR4"}]}]}"#;
+        let r = macos_memory(intel).unwrap();
+        assert_eq!(r.label().as_deref(), Some("DDR4-2667"));
+        assert_eq!(r.bandwidth("Intel(R) Core(TM) i9"), Some(42.672));
     }
 }

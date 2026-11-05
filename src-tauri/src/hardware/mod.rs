@@ -62,6 +62,8 @@ pub struct HardwareInfo {
     pub gpus: Vec<Gpu>,
     /// Main memory bandwidth in GB/s (estimate; on Apple Silicon the same as the GPU's).
     pub ram_bandwidth: f64,
+    /// Memory type and rate as the system reports it, e.g. "DDR4-3200" or "LPDDR5".
+    pub ram_type: Option<String>,
     pub suggested_backend: Backend,
     pub tier: Tier,
 }
@@ -75,7 +77,15 @@ impl HardwareInfo {
 
 /// Run a tool with a timeout; `None` if missing, failing or too slow.
 fn run(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
-    let mut child = Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        // No console window flashing up for each tool.
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
     // Read in a thread so a large output (full vulkaninfo) can't fill the pipe and block.
     let reader = std::thread::spawn(move || {
@@ -186,6 +196,19 @@ fn detect_gpus(ram_total: u64) -> Vec<Gpu> {
     vec![]
 }
 
+/// Memory type, rate and module count from the system's hardware report.
+fn detect_ram() -> Option<parse::RamModules> {
+    let t = Duration::from_secs(10);
+    if cfg!(target_os = "macos") {
+        run("system_profiler", &["SPMemoryDataType", "-json"], t).and_then(|j| parse::macos_memory(&j))
+    } else if cfg!(target_os = "windows") {
+        let cmd = "Get-CimInstance Win32_PhysicalMemory | Select-Object SMBIOSMemoryType,ConfiguredClockSpeed,Speed | ConvertTo-Json -Compress";
+        run("powershell", &["-NoProfile", "-NonInteractive", "-Command", cmd], t).and_then(|j| parse::windows_memory(&j))
+    } else {
+        run("dmidecode", &["-t", "17"], t).and_then(|o| parse::dmidecode_memory(&o))
+    }
+}
+
 fn has_avx2() -> Option<bool> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -211,6 +234,15 @@ pub fn detect() -> HardwareInfo {
     let avx2 = has_avx2();
     let unified = gpus.iter().any(|g| g.api == GpuApi::Metal);
     let best_vram = gpus.iter().map(|g| g.vram).max().unwrap_or(0);
+    let ram = detect_ram();
+    // Apple Silicon: the chip table (CPU and GPU share the memory). Otherwise from the modules,
+    // and when the system won't say: dual-channel DDR4/DDR5 (~60 GB/s).
+    let ram_bandwidth = gpus
+        .iter()
+        .find(|g| g.api == GpuApi::Metal)
+        .and_then(|g| g.bandwidth)
+        .or_else(|| ram.as_ref().and_then(|r| r.bandwidth(&cpu_name)))
+        .unwrap_or(60.0);
     HardwareInfo {
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
@@ -221,8 +253,8 @@ pub fn detect() -> HardwareInfo {
         ram_total,
         ram_available: sys.as_ref().map_or(0, |s| s.available_memory()),
         unified_memory: unified,
-        // Apple: CPU and GPU share the memory; PCs: assume dual-channel DDR4/DDR5 (~60 GB/s).
-        ram_bandwidth: gpus.iter().find(|g| g.api == GpuApi::Metal).and_then(|g| g.bandwidth).unwrap_or(60.0),
+        ram_bandwidth,
+        ram_type: ram.and_then(|r| r.label()),
         suggested_backend: suggest_backend(&gpus, avx2),
         tier: tier_for(best_vram),
         gpus,
