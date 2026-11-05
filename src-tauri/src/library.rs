@@ -88,9 +88,11 @@ pub fn classify(file: &str, arch: Option<&str>) -> ModelType {
     }
 }
 
-/// Folder of a path's drive: the longest mount point that contains it.
+/// Folder of a path's drive: the longest mount point that contains it. Symbolic links are
+/// resolved first (on macOS `/Volumes/<startup disk>` points to `/`).
 pub fn drive_of<'a>(path: &Path, drives: &'a [Drive]) -> Option<&'a Drive> {
-    drives.iter().filter(|d| path.starts_with(&d.mount)).max_by_key(|d| d.mount.len())
+    let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    drives.iter().filter(|d| real.starts_with(&d.mount)).max_by_key(|d| d.mount.len())
 }
 
 pub fn drives() -> Vec<Drive> {
@@ -257,7 +259,12 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
             m.support = m.architecture.as_deref().map(|a| crate::config::archs::support(a, installed));
         }
     }
-    let used: std::collections::HashSet<String> = models.iter().filter_map(|m| m.drive.clone()).collect();
+    // Drives with models, and the drives of all library folders (even before a model is found there).
+    let used: std::collections::HashSet<String> = models
+        .iter()
+        .filter_map(|m| m.drive.clone())
+        .chain(folders.iter().filter_map(|f| drive_of(f, &all_drives).map(|d| d.mount.clone())))
+        .collect();
     let shown = all_drives.into_iter().filter(|d| used.contains(&d.mount)).collect();
     (models, shown)
 }
@@ -346,6 +353,22 @@ pub fn trash_model(path: &Path) -> Result<(), trash::Error> {
         ctx.set_delete_method(DeleteMethod::NsFileManager);
     }
     ctx.delete_all(model_files(path))
+}
+
+#[cfg(test)]
+mod drive_tests {
+    use super::*;
+
+    #[test]
+    fn folder_drive_is_shown_without_models() {
+        let d = tempfile::tempdir().unwrap();
+        let (models, drives) = scan(&[(d.path().to_path_buf(), false)], &Default::default(), None);
+        assert!(models.is_empty());
+        let want = drive_of(d.path(), &super::drives()).map(|x| x.mount.clone());
+        if want.is_some() {
+            assert_eq!(drives.iter().map(|x| Some(x.mount.clone())).collect::<Vec<_>>(), [want]);
+        }
+    }
 }
 
 #[cfg(test)]
