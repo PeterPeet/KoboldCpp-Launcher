@@ -130,9 +130,9 @@ function hardwareRow() {
   const tier = vram() ? `${TIER_LABEL[selectedTier()]} · ${fmtBytes(vram())} ${hw.unifiedMemory ? "for models" : "GPU"}` : "CPU only";
   return h("div", { class: "hw" },
     h("span", {}, "Run on"), ...chips,
-    // "usable": what the launcher counts on when a model runs on the CPU (60 % of RAM, as in fit.rs).
-    h("span", { class: "hwchip on fixed", title: "The CPU is always used. Usable: the share of RAM a model may take when it runs on the CPU." },
-      `CPU · ${hw.cpuName || hw.arch} · ${fmtBytes(hw.ramTotal)} RAM ${fmtBytes(hw.ramTotal * 0.6)} usable`),
+    // "for models": what the launcher counts on when a model runs on the CPU (60 % of RAM, as in fit.rs).
+    h("span", { class: "hwchip on fixed", title: `The CPU is always used. For system stability, models should use at most ${fmtBytes(hw.ramTotal * 0.6)}, which leaves room for the system and other apps.` },
+      `CPU · ${hw.cpuName || hw.arch} · ${fmtBytes(hw.ramTotal)} RAM · ~${fmtBytes(hw.ramTotal * 0.6)} for models`),
     h("span", { class: "pill p-acc" }, tier),
     hw.gpus.length === 0 ? h("span", { class: "note", style: "margin:0" }, "No supported GPU found. KoboldCpp runs on the CPU.") : null);
 }
