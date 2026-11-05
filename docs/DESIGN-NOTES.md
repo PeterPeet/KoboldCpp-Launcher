@@ -121,6 +121,8 @@ Open question: follow KoboldCpp or Esobold releases.
   add little: their models arrive as quants by others.
 - **Default sources, version 3:** mradermacher (quants of nearly everything, static and imatrix
   "i1" repos) and DavidAU (own finetunes and merges), both off by default.
+- **Default sources, version 4:** lmstudio-community and ggml-org (official quants of well-known
+  models; ggml-org also ships MTP files), on.
 - **KoboldCpp output on a pseudo-terminal (macOS, Linux):** its C code prints with C stdio,
   which holds output back in a pipe (and loses it when stopped): no prompt/generation lines,
   no "Detected MTP draft head". With a pseudo-terminal it writes line by line. Color codes are

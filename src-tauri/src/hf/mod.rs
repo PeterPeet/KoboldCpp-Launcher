@@ -341,18 +341,22 @@ pub fn default_sources() -> Vec<Source> {
         s("TheDrummer", "TheDrummer", false, false, Some((false, true, false)), "Roleplay and story finetunes"),
     ]);
     v.extend(COMMUNITY_V2.iter().map(|n| community_source(n)));
-    v.extend(V3.iter().map(|(n, f, d)| v3_source(n, *f, d)));
+    v.extend(LATER.iter().map(later_source));
     v
 }
 
-/// Added in sources version 3, off by default: (name, has official quants, description).
-const V3: &[(&str, bool, &str)] = &[
-    ("mradermacher", true, "Quants of almost every model and finetune (also imatrix \"i1\" repos)"),
-    ("DavidAU", false, "Own finetunes and merges"),
+/// Sources added in later versions: (version, name, on by default, official quants, finetunes, description).
+type Later = (u32, &'static str, bool, bool, bool, &'static str);
+const LATER: &[Later] = &[
+    (3, "mradermacher", false, true, true, "Quants of almost every model and finetune (also imatrix \"i1\" repos)"),
+    (3, "DavidAU", false, false, true, "Own finetunes and merges"),
+    (4, "lmstudio-community", true, true, false, "LM Studio's quants of well-known models"),
+    (4, "ggml-org", true, true, false, "Quants by the llama.cpp team"),
 ];
 
-fn v3_source(name: &str, official: bool, desc: &str) -> Source {
-    Source { id: name.into(), name: name.into(), builtin: false, on: false, comps: Some(Components { official, finetune: true, unc: false }), desc: desc.into() }
+fn later_source(l: &Later) -> Source {
+    let &(_, name, on, official, finetune, desc) = l;
+    Source { id: name.into(), name: name.into(), builtin: false, on, comps: Some(Components { official, finetune, unc: false }), desc: desc.into() }
 }
 
 /// Community finetuners added to the defaults in sources version 2 (on, after the others).
@@ -380,13 +384,11 @@ pub fn add_new_defaults(list: &mut Vec<Source>, from: u32) {
     if from < 2 {
         COMMUNITY_V2.iter().for_each(|n| add(community_source(n)));
     }
-    if from < 3 {
-        V3.iter().for_each(|(n, f, d)| add(v3_source(n, *f, d)));
-    }
+    LATER.iter().filter(|l| from < l.0).for_each(|l| add(later_source(l)));
 }
 
 /// Current version of the default source list (see `add_new_defaults`).
-pub const SOURCES_VERSION: u32 = 3;
+pub const SOURCES_VERSION: u32 = 4;
 
 /// Bring a saved source list up to date: built-in sources that are missing are added (enabled,
 /// after the ones already there), and the old combined "labs" entry is replaced by the makers.
@@ -922,6 +924,11 @@ mod tests {
         v2.retain(|s| s.name != "mradermacher" && s.name != "DavidAU");
         add_new_defaults(&mut v2, 2);
         assert!(v2.iter().any(|s| s.name == "mradermacher" && !s.on) && v2.iter().any(|s| s.name == "DavidAU" && !s.on));
+        // Version 4: lmstudio-community and ggml-org, on; a version-3 list gets only these.
+        let mut v3: Vec<Source> = default_sources().into_iter().filter(|s| s.name != "lmstudio-community" && s.name != "ggml-org" && s.name != "DavidAU").collect();
+        add_new_defaults(&mut v3, 3);
+        assert!(v3.iter().any(|s| s.name == "lmstudio-community" && s.on) && v3.iter().any(|s| s.name == "ggml-org" && s.on));
+        assert!(!v3.iter().any(|s| s.name == "DavidAU"), "removed in version 3, stays removed");
     }
 
     #[test]
