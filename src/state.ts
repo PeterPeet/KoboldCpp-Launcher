@@ -2,18 +2,15 @@
 
 import type { BinaryStatus, HardwareInfo, Machine, PopularResult, ServerStatus, Settings, Source as ApiSource, Template, UpdateInfo } from "./api";
 import type { DlState } from "./downloads";
-import { TIERS, type TierId } from "./data";
 
 export type Source = ApiSource;
 
 export const S = {
-  tier: "mid" as TierId,
   useGpu: [] as boolean[],
   official: true,
   uncensored: false,
   showAllTiers: false,
   running: null as string | null,
-  downloads: {} as Record<string, { pct: number; size: number }>,
   /** Loaded from settings.json at start. */
   sources: [] as Source[],
   lib: {
@@ -22,21 +19,11 @@ export const S = {
     types: new Set<string>(),
     fams: new Set<string>(),
     drives: new Set<string>(),
-    confirm: null as number | null,
+    confirm: null as string | null,
   },
-  adv: {
-    page: "hardware",
-    backend: "cuda",
-    gpus: [true, true],
-    split: 60,
-    layers: 65,
-    ctx: 16384,
-    fa: true,
-    kv: "f16",
-    main: 0,
-    img: 1,
-    mode: "layer",
-  },
+  adv: { page: "hardware" },
+  /** Launch config edited on the advanced page (a .kcpps as JSON). */
+  cfg: {} as Record<string, unknown>,
   server: { state: "stopped" } as ServerStatus,
   logs: [] as string[],
   binary: null as BinaryStatus | null,
@@ -51,22 +38,6 @@ export const S = {
   popularKey: "",
   popularError: "",
 };
-
-try {
-  const t = localStorage.getItem("kl-tier");
-  if (t && t in TIERS) S.tier = t as TierId;
-} catch {
-  /* storage unavailable: keep default */
-}
-S.useGpu = TIERS[S.tier].gpus.map(() => true);
-
-export function saveTier() {
-  try {
-    localStorage.setItem("kl-tier", S.tier);
-  } catch {
-    /* ignore */
-  }
-}
 
 /** Graphics memory of the ticked GPUs (bytes). */
 export const vram = () => (S.hw?.gpus ?? []).reduce((a, g, i) => a + (S.useGpu[i] !== false ? g.vram : 0), 0);

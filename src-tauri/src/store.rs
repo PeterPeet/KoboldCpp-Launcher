@@ -52,6 +52,8 @@ pub struct Settings {
     pub library_folders: Vec<PathBuf>,
     /// Hugging Face sources, highest priority first.
     pub sources: Vec<crate::hf::Source>,
+    /// Model path → last start (unix seconds).
+    pub last_used: std::collections::HashMap<String, u64>,
 }
 
 impl Default for Settings {
@@ -63,6 +65,7 @@ impl Default for Settings {
             models_dir: None,
             library_folders: vec![],
             sources: crate::hf::default_sources(),
+            last_used: Default::default(),
         }
     }
 }

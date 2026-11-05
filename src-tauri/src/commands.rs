@@ -248,6 +248,12 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     }
     cfg.set("istemplate", Value::Bool(false));
     let port = cfg.port();
+    if let Some(m) = cfg.model().filter(|m| !config::kcpps::is_url(m)) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = state.update_settings(|s| {
+            s.last_used.insert(m, now);
+        });
+    }
     let path = state.dirs.runs().join("last-run.kcpps");
     cfg.save(&path).map_err(err)?;
     let app2 = app.clone();
@@ -497,4 +503,134 @@ pub fn import_sources(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Ve
     }
     let saved = state.update_settings(|s| s.sources = list)?;
     Ok(saved.sources)
+}
+
+/* ---------- library ---------- */
+
+fn library_roots(state: &AppState) -> Vec<PathBuf> {
+    let s = state.settings();
+    let mut roots = vec![s.models_dir(&state.dirs)];
+    roots.extend(s.library_folders.iter().cloned());
+    roots
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryView {
+    pub models: Vec<crate::library::LocalModel>,
+    pub drives: Vec<crate::library::Drive>,
+    pub folders: Vec<PathBuf>,
+    pub models_dir: PathBuf,
+}
+
+#[tauri::command]
+pub async fn library_scan(state: State<'_, AppState>) -> CmdResult<LibraryView> {
+    let roots = library_roots(&state);
+    let used = state.settings().last_used;
+    let models_dir = state.settings().models_dir(&state.dirs);
+    let folders = roots.clone();
+    let (models, drives) = tauri::async_runtime::spawn_blocking(move || crate::library::scan(&roots, &used)).await.map_err(err)?;
+    Ok(LibraryView { models, drives, folders, models_dir })
+}
+
+#[tauri::command]
+pub fn add_library_folder(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
+    if !path.is_dir() {
+        return Err("That folder does not exist".into());
+    }
+    state.update_settings(|s| {
+        if !s.library_folders.contains(&path) {
+            s.library_folders.push(path);
+        }
+    })
+}
+
+#[tauri::command]
+pub fn remove_library_folder(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
+    state.update_settings(|s| s.library_folders.retain(|p| p != &path))
+}
+
+#[tauri::command]
+pub async fn move_model(state: State<'_, AppState>, path: PathBuf, dest: PathBuf) -> CmdResult<PathBuf> {
+    if !crate::library::is_managed(&path, &library_roots(&state)) {
+        return Err("Only models in your library folders can be moved".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || crate::library::move_model(&path, &dest)).await.map_err(err)?.map_err(err)
+}
+
+/// Move a model (all parts) to the Trash.
+#[tauri::command]
+pub fn trash_model(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
+    if !crate::library::is_managed(&path, &library_roots(&state)) {
+        return Err("Only models in your library folders can be removed".into());
+    }
+    crate::library::trash_model(&path).map_err(err)
+}
+
+#[tauri::command]
+pub fn split_usage(size: u64, context: u32, shares: Vec<f64>, main_gpu: usize) -> Vec<u64> {
+    fit::split_usage(&fit::ModelShape { size, ..Default::default() }, context, &shares, main_gpu)
+}
+
+/* ---------- presets and configs ---------- */
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetInfo {
+    pub name: String,
+    pub path: PathBuf,
+    pub modified: Option<u64>,
+}
+
+fn preset_path(state: &AppState, name: &str) -> CmdResult<PathBuf> {
+    let clean: String = name.chars().filter(|c| c.is_alphanumeric() || " -_.()".contains(*c)).collect::<String>().trim().to_string();
+    if clean.is_empty() || clean.starts_with('.') {
+        return Err("Give the preset a name".into());
+    }
+    Ok(state.dirs.presets().join(format!("{clean}.kcpps")))
+}
+
+#[tauri::command]
+pub fn list_presets(state: State<'_, AppState>) -> Vec<PresetInfo> {
+    let mut out: Vec<PresetInfo> = std::fs::read_dir(state.dirs.presets())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "kcpps" || x == "kcppt"))
+        .map(|e| PresetInfo {
+            name: e.path().file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            modified: e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
+            path: e.path(),
+        })
+        .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(p.modified));
+    out
+}
+
+#[tauri::command]
+pub fn save_preset(state: State<'_, AppState>, name: String, config: Map<String, Value>) -> CmdResult<PathBuf> {
+    let path = preset_path(&state, &name)?;
+    let mut k = Kcpps::from_map(config);
+    k.set("istemplate", Value::Bool(false));
+    k.save(&path).map_err(err)?;
+    Ok(path)
+}
+
+#[tauri::command]
+pub fn delete_preset(state: State<'_, AppState>, name: String) -> CmdResult<()> {
+    std::fs::remove_file(preset_path(&state, &name)?).map_err(err)
+}
+
+/// Read any .kcpps/.kcppt (preset, import, drag and drop) with legacy keys migrated.
+#[tauri::command]
+pub fn load_config(path: PathBuf) -> CmdResult<Map<String, Value>> {
+    let mut k = Kcpps::load(&path).map_err(err)?;
+    k.migrate();
+    Ok(k.map().clone())
+}
+
+/// Settings of the last run, to fill the advanced page.
+#[tauri::command]
+pub fn last_config(state: State<'_, AppState>) -> Option<Map<String, Value>> {
+    Kcpps::load(&state.dirs.runs().join("last-run.kcpps")).ok().map(|k| k.map().clone())
 }

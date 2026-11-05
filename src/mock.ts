@@ -1,8 +1,8 @@
 // Browser-preview data (only loaded outside the desktop app). Mirrors the Rust logic roughly so
 // the UI can be checked in a normal browser; real numbers come from src-tauri.
 
-import type { Fit, Machine, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
-import { MODELS, TEMPLATES } from "./data";
+import type { Fit, LibraryView, LocalModel, Machine, ModelKind, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
+import { DRIVES, LOCAL, MODELS, TEMPLATES } from "./data";
 
 const GB = 1024 ** 3;
 
@@ -72,5 +72,24 @@ export function mockRepoFiles(repo: string): RepoFiles {
   return {
     quants: Object.entries(x?.quants ?? { Q4_K_M: 4.6 }).map(([q, s]) => ({ quant: q, label: q, files: [`model-${q}.gguf`], size: s * GB })),
     mmproj: x?.tags.includes("sees images") ? [["mmproj-F16.gguf", 0.9 * GB]] : [],
+  };
+}
+
+let removed = new Set<string>();
+export function mockTrash(path: string) { removed.add(path); }
+
+export function mockLibrary(): LibraryView {
+  const kind = (t: string): ModelKind => (t === "Image" || t === "Speech" || t === "Embedding" || t === "Vision" ? t : "Text");
+  const models: LocalModel[] = LOCAL.map((m) => ({
+    path: `/${m.drive}/models/${m.name.replace(/ /g, "-")}.gguf`, file: `${m.name.replace(/ /g, "-")}.gguf`, name: m.name, kind: kind(m.type),
+    architecture: m.famName.toLowerCase(), quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: 1,
+    layers: 40, contextLength: m.ctx === "–" ? null : parseInt(m.ctx) * 1024, headCountKv: 8, kvLen: 128,
+    mmproj: m.type === "Vision" ? `/${m.drive}/models/mmproj-F16.gguf` : null, drive: `/${m.drive}`, modified: null,
+    lastUsed: m.used === "Never" ? null : Date.now() / 1000 - 86400 * (m.id % 9),
+  })).filter((m) => !removed.has(m.path));
+  return {
+    models,
+    drives: Object.entries(DRIVES).map(([k, d]) => ({ mount: `/${k}`, name: d.label, total: d.total * GB, free: d.free * GB, removable: k === "E" })),
+    folders: ["/C/models", "/E/models"], modelsDir: "/C/models",
   };
 }

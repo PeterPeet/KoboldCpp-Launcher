@@ -56,6 +56,15 @@ export interface Source {
   comps: { official: boolean; finetune: boolean; unc: boolean } | null;
 }
 export interface Machine { vram: number; ram: number; unified: boolean; context: number }
+export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector";
+export interface LocalModel {
+  path: string; file: string; name: string; kind: ModelKind; architecture: string | null; quant: string | null; sizeLabel: string | null;
+  size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
+  mmproj: string | null; drive: string | null; modified: number | null; lastUsed: number | null;
+}
+export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
+export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: string[]; modelsDir: string }
+export interface PresetInfo { name: string; path: string; modified: number | null }
 
 /* ---------- plumbing ---------- */
 
@@ -164,6 +173,23 @@ export const api = {
     }),
   cancelDownload: (id: string) => call<void>("cancel_download", { id }, () => void mockCancelled.add(id)),
   exportSources: (path: string) => call<void>("export_sources", { path }),
+
+  library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
+  addFolder: (path: string) => call<Settings>("add_library_folder", { path }),
+  removeFolder: (path: string) => call<Settings>("remove_library_folder", { path }),
+  moveModel: (path: string, dest: string) => call<string>("move_model", { path, dest }),
+  trashModel: (path: string) => call<void>("trash_model", { path }, () => import("./mock").then((m) => m.mockTrash(path))),
+  splitUsage: (size: number, context: number, shares: number[], mainGpu: number) =>
+    call<number[]>("split_usage", { size, context, shares, mainGpu }, () => {
+      const sum = shares.reduce((a, b) => a + b, 0) || 1;
+      const need = size + 0.5 * GB + Math.min(Math.max(size * 0.03, 0.12 * GB), 0.6 * GB) * (context / 4096);
+      return shares.map((s, i) => (need * s) / sum + (i === mainGpu ? 0.8 * GB : 0));
+    }),
+  presets: () => call<PresetInfo[]>("list_presets", {}, () => [{ name: "Roleplay · Qwen3.8 27B", path: "/p/a.kcpps", modified: 0 }]),
+  savePreset: (name: string, config: Kcpps) => call<string>("save_preset", { name, config }, () => name),
+  deletePreset: (name: string) => call<void>("delete_preset", { name }, () => {}),
+  loadConfig: (path: string) => call<Kcpps>("load_config", { path }, () => ({ model_param: "/models/Qwen3.8-27B-Q4_K_M.gguf", contextsize: 16384 })),
+  lastConfig: () => call<Kcpps | null>("last_config", {}, () => null),
   importSources: (path: string) => call<Source[]>("import_sources", { path }),
 };
 

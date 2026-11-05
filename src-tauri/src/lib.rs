@@ -6,6 +6,7 @@ pub mod fit;
 pub mod gguf;
 pub mod hardware;
 pub mod hf;
+pub mod library;
 pub mod server;
 pub mod store;
 
@@ -50,6 +51,17 @@ pub fn run() {
             cancel_download,
             export_sources,
             import_sources,
+            library_scan,
+            add_library_folder,
+            remove_library_folder,
+            move_model,
+            trash_model,
+            split_usage,
+            list_presets,
+            save_preset,
+            delete_preset,
+            load_config,
+            last_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -9,7 +9,7 @@ import "./styles.css";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
 import { openSources } from "./dialogs/sources";
-import { api } from "./api";
+import { api, inTauri } from "./api";
 import { drawUpdBtn, openUpdate, refreshBinary } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
 import { initDownloads } from "./downloads";
@@ -53,6 +53,7 @@ document.addEventListener("keydown", (e) => {
 
 $("#openSources")!.addEventListener("click", openSources);
 $("#updBtn")!.addEventListener("click", openUpdate);
+if (!inTauri) $("#previewPill")!.hidden = false;
 drawUpdBtn();
 initServer();
 initDownloads();
