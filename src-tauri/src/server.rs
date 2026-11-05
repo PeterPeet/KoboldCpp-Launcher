@@ -155,6 +155,43 @@ pub fn kill_orphans(bin_dir: &Path) -> usize {
     }
 }
 
+/// A pseudo-terminal for KoboldCpp's output: (our side, its stdout, its stderr).
+#[cfg(unix)]
+fn open_pty() -> Option<(std::fs::File, Stdio, Stdio)> {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty only writes the two descriptors; null name/termios/winsize are allowed.
+    let r = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
+    if r != 0 {
+        return None;
+    }
+    // SAFETY: both descriptors were just opened by openpty and are owned here.
+    let (master, slave) = unsafe { (std::fs::File::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    let err = slave.try_clone().ok()?;
+    Some((master, Stdio::from(slave), Stdio::from(err)))
+}
+
+/// Remove terminal color codes (`ESC [ … letter`) that programs print on a terminal.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '\u{1b}' {
+            if it.peek() == Some(&'[') {
+                it.next();
+                for c in it.by_ref() {
+                    if c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Progress lines KoboldCpp rewrites in place; only the latest is kept.
 fn is_progress(line: &str) -> bool {
     line.starts_with("Generating (") || line.starts_with("Processing Prompt") || line.starts_with("Processing (")
@@ -211,7 +248,24 @@ impl ServerManager {
             return Err(ServerError::PortBusy(port));
         }
         let mut cmd = Command::new(binary);
-        cmd.arg("--config").arg(config).arg("--skiplauncher").current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.arg("--config").arg(config).arg("--skiplauncher").current_dir(cwd).stdin(Stdio::null());
+        // KoboldCpp's C code prints with C stdio, which holds output back in a pipe (only full
+        // buffers arrive; the rest is lost when it stops). A pseudo-terminal makes it write line
+        // by line, so the log shows prompt processing, generation and MTP/draft messages live.
+        #[cfg(unix)]
+        let pty = open_pty();
+        #[cfg(not(unix))]
+        let pty: Option<(std::fs::File, Stdio, Stdio)> = None;
+        let pty_master = match pty {
+            Some((master, out, err)) => {
+                cmd.stdout(out).stderr(err);
+                Some(master)
+            }
+            None => {
+                cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+                None
+            }
+        };
         // Unbuffered Python output so the log updates live.
         cmd.env("PYTHONUNBUFFERED", "1");
         #[cfg(windows)]
@@ -227,7 +281,13 @@ impl ServerManager {
             cmd.process_group(0);
         }
         let mut child = cmd.spawn().map_err(ServerError::Spawn)?;
-        let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+        // Our copies of the terminal's child side go away with `cmd`, so reading the master side
+        // ends when KoboldCpp exits.
+        drop(cmd);
+        let readers: Vec<Box<dyn Read + Send>> = match pty_master {
+            Some(m) => vec![Box::new(m)],
+            None => [child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>), child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>)].into_iter().flatten().collect(),
+        };
         // Everything KoboldCpp prints also goes to <config>.log (e.g. runs/last-run.log).
         let log_path = self.log_path.lock().unwrap().clone().unwrap_or_else(|| config.with_extension("log"));
         let log_file = std::fs::File::create(log_path).ok().map(|f| Arc::new(Mutex::new(f)));
@@ -242,7 +302,7 @@ impl ServerManager {
         };
         notify(ServerEvent::Status { status: ServerStatus::Starting { port } });
 
-        for pipe in [stdout.map(|p| Box::new(p) as Box<dyn Read + Send>), stderr.map(|p| Box::new(p) as Box<dyn Read + Send>)].into_iter().flatten() {
+        for pipe in readers {
             let inner = self.inner.clone();
             let notify = notify.clone();
             let log_file = log_file.clone();
@@ -264,7 +324,7 @@ impl ServerManager {
                     if !got_any {
                         break;
                     }
-                    let line = String::from_utf8_lossy(&buf).trim_end().to_string();
+                    let line = strip_ansi(&String::from_utf8_lossy(&buf)).trim_end().to_string();
                     if line.is_empty() {
                         continue;
                     }
@@ -394,6 +454,33 @@ impl ServerManager {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn strips_color_codes() {
+        assert_eq!(strip_ansi("\u{1b}[1;32mLoad Text Model OK\u{1b}[0m: True"), "Load Text Model OK: True");
+        assert_eq!(strip_ansi("plain"), "plain");
+    }
+
+    #[test]
+    fn pty_output_arrives_and_ends() {
+        // The Claude sandbox has no pseudo-terminals; skip there like the process tests.
+        let Some((mut master, out, err)) = open_pty() else { return eprintln!("no pseudo-terminal available here, skipped") };
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "echo out; echo err >&2"]).stdin(Stdio::null()).stdout(out).stderr(err);
+        let mut child = cmd.spawn().unwrap();
+        drop(cmd);
+        let mut text = String::new();
+        let mut b = [0u8; 256];
+        // Reading ends with EOF or EIO once the child side is closed.
+        while let Ok(n) = master.read(&mut b) {
+            if n == 0 {
+                break;
+            }
+            text.push_str(&String::from_utf8_lossy(&b[..n]));
+        }
+        child.wait().unwrap();
+        assert!(text.contains("out") && text.contains("err"), "{text:?}");
+    }
 
     fn free_port() -> u16 {
         TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()

@@ -13,8 +13,10 @@ export function initDownloads() {
     const d = S.dl[p.id];
     if (!d) return;
     Object.assign(d, p);
+    // Update the progress bar in place. A row not on screen draws its state from S.dl when it
+    // appears; redrawing the screen here would rebuild inputs while the user types.
     const el = document.querySelector<HTMLElement>(`[data-dl="${CSS.escape(p.id)}"]`);
-    if (!el) return render();
+    if (!el) return;
     el.querySelector<HTMLElement>(".bar-fill")!.style.width = pct(d) + "%";
     el.querySelector("small")!.textContent = dlText(d);
   });

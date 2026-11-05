@@ -110,6 +110,20 @@ Open question: follow KoboldCpp or Esobold releases.
 
 ## Implementation (2026-11-05)
 
+- **Uncensored label:** the repo ID contains uncensored, abliterated, unfiltered, decensored,
+  orthogonalized, heretic or thedrummer (TheDrummer's models and others' quants of them), or has
+  the word nsfw / erp on its own (so "enterprise" doesn't count), or the tag uncensored,
+  not-for-all-audiences or nsfw.
+- **Default sources, version 2:** Gryphe, PocketDoc, Sao10K, zerofata, BeaverAI, LatitudeGames,
+  anthracite-org, MarinaraSpaghetti, NeverSleep, ToastyPigeon (on, community finetunes).
+  Existing settings get them once (`sourcesVersion`); a removed one stays removed. Sources match
+  by uploader, so accounts with few GGUF uploads (PocketDoc 0, Gryphe 2, Sao10K 2 in Nov 2026)
+  add little: their models arrive as quants by others.
+- **KoboldCpp output on a pseudo-terminal (macOS, Linux):** its C code prints with C stdio,
+  which holds output back in a pipe (and loses it when stopped): no prompt/generation lines,
+  no "Detected MTP draft head". With a pseudo-terminal it writes line by line. Color codes are
+  stripped. Windows still uses pipes.
+
 First full version built in six phases (commits on `main`). Decisions made on the way:
 
 - **Binary:** official KoboldCpp releases only (`LostRuins/koboldcpp`); Esobold may become a second

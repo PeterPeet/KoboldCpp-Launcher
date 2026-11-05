@@ -78,6 +78,9 @@ pub struct Settings {
     pub library_folders: Vec<LibraryFolder>,
     /// Hugging Face sources, highest priority first.
     pub sources: Vec<crate::hf::Source>,
+    /// Version of the default source list these settings have seen (older files: 0).
+    #[serde(default)]
+    pub sources_version: u32,
     /// Model path → last start (unix seconds).
     pub last_used: std::collections::HashMap<String, u64>,
     /// Model path → generation speed KoboldCpp reported (tokens/s), from the last answers.
@@ -93,6 +96,7 @@ impl Default for Settings {
             models_dir: None,
             library_folders: vec![],
             sources: crate::hf::default_sources(),
+            sources_version: crate::hf::SOURCES_VERSION,
             last_used: Default::default(),
             speeds: Default::default(),
         }
@@ -103,6 +107,8 @@ impl Settings {
     pub fn load(path: &Path) -> Self {
         let mut s: Self = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         s.sources = crate::hf::migrate_sources(std::mem::take(&mut s.sources));
+        crate::hf::add_new_defaults(&mut s.sources, s.sources_version);
+        s.sources_version = crate::hf::SOURCES_VERSION;
         s
     }
 

@@ -187,7 +187,11 @@ pub fn is_faithful_quant(e: &ModelEntry) -> bool {
     norm(&clean_name(e.repo_name())) == norm(base_name)
 }
 
-const UNCENSORED_WORDS: &[&str] = &["uncensored", "abliterated", "unfiltered", "decensored", "orthogonalized", "heretic"];
+/// Anywhere in the repo ID (owner or name). "thedrummer": TheDrummer's models and others' quants
+/// of them (`bartowski/TheDrummer_…`).
+const UNCENSORED_WORDS: &[&str] = &["uncensored", "abliterated", "unfiltered", "decensored", "orthogonalized", "heretic", "thedrummer"];
+/// Only as a whole word of the ID: short ones would match inside others ("enterprise").
+const UNCENSORED_TOKENS: &[&str] = &["nsfw", "erp"];
 
 /// Chat/text models (also vision chat). Image, video, speech and embedding models are left out
 /// of the popular list; KoboldCpp's templates cover those.
@@ -203,7 +207,9 @@ pub fn is_text_model(e: &ModelEntry) -> bool {
 
 pub fn is_uncensored(e: &ModelEntry) -> bool {
     let id = e.id.to_ascii_lowercase();
-    UNCENSORED_WORDS.iter().any(|w| id.contains(w)) || e.tags.iter().any(|t| t == "uncensored" || t == "not-for-all-audiences")
+    UNCENSORED_WORDS.iter().any(|w| id.contains(w))
+        || id.split(|c: char| !c.is_ascii_alphanumeric()).any(|t| UNCENSORED_TOKENS.contains(&t))
+        || e.tags.iter().any(|t| t == "uncensored" || t == "not-for-all-audiences" || t == "nsfw")
 }
 
 /// Day number since 1970-01-01 of an ISO 8601 date ("2026-08-13T08:28:40.000Z").
@@ -334,8 +340,38 @@ pub fn default_sources() -> Vec<Source> {
         s("bartowski", "bartowski", false, false, Some((true, true, false)), "Official quants and community finetunes"),
         s("TheDrummer", "TheDrummer", false, false, Some((false, true, false)), "Roleplay and story finetunes"),
     ]);
+    v.extend(COMMUNITY_V2.iter().map(|n| community_source(n)));
     v
 }
+
+/// Community finetuners added to the defaults in sources version 2 (on, after the others).
+pub const COMMUNITY_V2: &[&str] = &["Gryphe", "PocketDoc", "Sao10K", "zerofata", "BeaverAI", "LatitudeGames", "anthracite-org", "MarinaraSpaghetti", "NeverSleep", "ToastyPigeon"];
+
+fn community_source(name: &str) -> Source {
+    Source {
+        id: name.into(),
+        name: name.into(),
+        builtin: false,
+        on: true,
+        comps: Some(Components { official: false, finetune: true, unc: false }),
+        desc: format!("Community finetunes (hf.co/{name})"),
+    }
+}
+
+/// Add sources that became defaults after `from` (a settings version) and aren't in the list yet.
+/// Runs once per version, so a source the user removes stays removed.
+pub fn add_new_defaults(list: &mut Vec<Source>, from: u32) {
+    if from < 2 {
+        for n in COMMUNITY_V2 {
+            if !list.iter().any(|s| s.name.eq_ignore_ascii_case(n)) {
+                list.push(community_source(n));
+            }
+        }
+    }
+}
+
+/// Current version of the default source list (see `add_new_defaults`).
+pub const SOURCES_VERSION: u32 = 2;
 
 /// Bring a saved source list up to date: built-in sources that are missing are added (enabled,
 /// after the ones already there), and the old combined "labs" entry is replaced by the makers.
@@ -725,8 +761,12 @@ mod tests {
         assert!(r.items.windows(2).all(|w| w[0].downloads >= w[1].downloads), "sorted by downloads");
         // Enable TheDrummer finetunes and show all models
         for s in &mut sources { if s.id == "TheDrummer" { s.on = true; } }
-        let r2 = rank(&all, &sources, RankOptions { official_only: false, show_uncensored: false, sort: Sort::Downloads }, NOW);
+        let r2 = rank(&all, &sources, RankOptions { official_only: false, show_uncensored: true, sort: Sort::Downloads }, NOW);
         assert!(r2.items.iter().any(|i| i.author == "TheDrummer"));
+        // TheDrummer's models count as uncensored, so hiding uncensored hides them.
+        assert!(r2.items.iter().filter(|i| i.author == "TheDrummer").all(|i| i.uncensored));
+        let r3 = rank(&all, &sources, RankOptions { official_only: false, show_uncensored: false, sort: Sort::Downloads }, NOW);
+        assert!(!r3.items.iter().any(|i| i.author == "TheDrummer"));
     }
 
     #[test]
@@ -761,6 +801,17 @@ mod tests {
         assert_eq!(f.best_mmproj().unwrap().0, "mmproj-F16.gguf");
         assert_eq!(f.best_mtp().map(|m| m.0.as_str()), Some("MTP/mtp-Qwen3.8-27B-Q4_0.gguf"), "unsloth's Qwen3.8 repo has an MTP/ folder");
         assert!(f.sizes().iter().any(|(q, _)| q == "Q6_K"));
+    }
+
+    #[test]
+    fn uncensored_words() {
+        let e = |id: &str| ModelEntry { id: id.into(), likes: 0, downloads: 0, created_at: None, tags: vec![], base_models: None, pipeline_tag: None, trending_score: None };
+        for id in ["TheDrummer/Cydonia-24B-v4.2.0-GGUF", "bartowski/TheDrummer_Rocinante-12B-GGUF", "someone/Llama-3-8B-NSFW-GGUF", "x/Mistral-ERP-7B-GGUF", "x/model_erp_v2-GGUF", "mlabonne/Qwen3-14B-abliterated-GGUF"] {
+            assert!(is_uncensored(&e(id)), "{id}");
+        }
+        for id in ["x/Enterprise-Assistant-7B-GGUF", "x/Interpreter-3B-GGUF", "Qwen/Qwen3-8B-GGUF", "x/Hyperparameter-Tuned-GGUF"] {
+            assert!(!is_uncensored(&e(id)), "{id}");
+        }
     }
 
     #[test]
@@ -837,6 +888,16 @@ mod tests {
         assert!(!ids.contains(&"labs") && ids.contains(&"nvidia") && ids.contains(&"bartowski"));
         assert!(new.iter().find(|s| s.id == "google").unwrap().on);
         assert_eq!(migrate_sources(new.clone()), new, "idempotent");
+        // Version 2 adds the community finetuners once, keeping ones the user already has.
+        let mut list = new;
+        add_new_defaults(&mut list, 0);
+        assert!(COMMUNITY_V2.iter().all(|n| list.iter().any(|s| s.name == *n && s.on)));
+        let n = list.len();
+        add_new_defaults(&mut list, 0);
+        assert_eq!(list.len(), n, "no duplicates");
+        list.retain(|s| s.name != "Gryphe");
+        add_new_defaults(&mut list, SOURCES_VERSION);
+        assert!(!list.iter().any(|s| s.name == "Gryphe"), "removed stays removed");
     }
 
     #[test]

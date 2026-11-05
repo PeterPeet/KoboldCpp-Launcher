@@ -31,9 +31,25 @@ function render() {
   const r = route();
   document.querySelectorAll<HTMLElement>("[data-route]").forEach((a) => a.setAttribute("aria-current", a.dataset.route === r ? "page" : "false"));
   const scr = $("#screen")!;
-  const focusId = document.activeElement?.id;
+  // Keep the text field the user is typing in (focus and cursor) across a redraw. Fields are
+  // matched by id, else by placeholder (e.g. the Discover search box has no id).
+  const act = document.activeElement as HTMLInputElement | null;
+  const typing = act && (act.tagName === "INPUT" || act.tagName === "TEXTAREA") && scr.contains(act);
+  const key = typing ? act!.id || act!.placeholder : "";
+  const sel = typing ? [act!.selectionStart, act!.selectionEnd] : null;
+  const focusId = act?.id;
   scr.replaceChildren(r === "library" ? renderLibrary() : r === "advanced" ? renderAdvanced() : renderStart());
-  if (focusId && focusId !== "libq") document.getElementById(focusId)?.focus();
+  if (key) {
+    const again = [...scr.querySelectorAll<HTMLInputElement>("input, textarea")].find((i) => (i.id || i.placeholder) === key);
+    if (again) {
+      again.focus();
+      try {
+        if (sel && sel[0] != null) again.setSelectionRange(sel[0], sel[1]);
+      } catch {
+        /* inputs like number fields have no selection */
+      }
+    }
+  } else if (focusId && focusId !== "libq") document.getElementById(focusId)?.focus();
   setStatus();
 }
 setRender(render);
