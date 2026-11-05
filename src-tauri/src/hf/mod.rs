@@ -341,7 +341,18 @@ pub fn default_sources() -> Vec<Source> {
         s("TheDrummer", "TheDrummer", false, false, Some((false, true, false)), "Roleplay and story finetunes"),
     ]);
     v.extend(COMMUNITY_V2.iter().map(|n| community_source(n)));
+    v.extend(V3.iter().map(|(n, f, d)| v3_source(n, *f, d)));
     v
+}
+
+/// Added in sources version 3, off by default: (name, has official quants, description).
+const V3: &[(&str, bool, &str)] = &[
+    ("mradermacher", true, "Quants of almost every model and finetune (also imatrix \"i1\" repos)"),
+    ("DavidAU", false, "Own finetunes and merges"),
+];
+
+fn v3_source(name: &str, official: bool, desc: &str) -> Source {
+    Source { id: name.into(), name: name.into(), builtin: false, on: false, comps: Some(Components { official, finetune: true, unc: false }), desc: desc.into() }
 }
 
 /// Community finetuners added to the defaults in sources version 2 (on, after the others).
@@ -361,17 +372,21 @@ fn community_source(name: &str) -> Source {
 /// Add sources that became defaults after `from` (a settings version) and aren't in the list yet.
 /// Runs once per version, so a source the user removes stays removed.
 pub fn add_new_defaults(list: &mut Vec<Source>, from: u32) {
-    if from < 2 {
-        for n in COMMUNITY_V2 {
-            if !list.iter().any(|s| s.name.eq_ignore_ascii_case(n)) {
-                list.push(community_source(n));
-            }
+    let mut add = |s: Source| {
+        if !list.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
+            list.push(s);
         }
+    };
+    if from < 2 {
+        COMMUNITY_V2.iter().for_each(|n| add(community_source(n)));
+    }
+    if from < 3 {
+        V3.iter().for_each(|(n, f, d)| add(v3_source(n, *f, d)));
     }
 }
 
 /// Current version of the default source list (see `add_new_defaults`).
-pub const SOURCES_VERSION: u32 = 2;
+pub const SOURCES_VERSION: u32 = 3;
 
 /// Bring a saved source list up to date: built-in sources that are missing are added (enabled,
 /// after the ones already there), and the old combined "labs" entry is replaced by the makers.
@@ -873,6 +888,10 @@ mod tests {
         assert_eq!(quant_of("gpt-oss-20b-MXFP4.gguf").unwrap().0, "MXFP4");
         assert_eq!(quant_of("Llama-3.1-8B-Instruct-Q4_K_M-00001-of-00002.gguf").unwrap().0, "Q4_K_M");
         assert_eq!(quant_of("Qwen3-30B-A3B-Q8_0.gguf").unwrap().0, "Q8_0");
+        // mradermacher: static and imatrix ("i1") files
+        assert_eq!(quant_of("Cydonia-24B-v4.2.0.Q4_K_M.gguf").unwrap().0, "Q4_K_M");
+        assert_eq!(quant_of("Cydonia-24B-v4.2.0.i1-Q4_K_M.gguf").unwrap().0, "Q4_K_M");
+        assert_eq!(quant_of("Cydonia-24B-v4.2.0.i1-IQ3_XS.gguf").unwrap().0, "IQ3_XS");
     }
 
     #[test]
@@ -898,6 +917,11 @@ mod tests {
         list.retain(|s| s.name != "Gryphe");
         add_new_defaults(&mut list, SOURCES_VERSION);
         assert!(!list.iter().any(|s| s.name == "Gryphe"), "removed stays removed");
+        // Version 3: mradermacher and DavidAU, both off.
+        let mut v2 = default_sources();
+        v2.retain(|s| s.name != "mradermacher" && s.name != "DavidAU");
+        add_new_defaults(&mut v2, 2);
+        assert!(v2.iter().any(|s| s.name == "mradermacher" && !s.on) && v2.iter().any(|s| s.name == "DavidAU" && !s.on));
     }
 
     #[test]

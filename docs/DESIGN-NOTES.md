@@ -119,6 +119,8 @@ Open question: follow KoboldCpp or Esobold releases.
   Existing settings get them once (`sourcesVersion`); a removed one stays removed. Sources match
   by uploader, so accounts with few GGUF uploads (PocketDoc 0, Gryphe 2, Sao10K 2 in Nov 2026)
   add little: their models arrive as quants by others.
+- **Default sources, version 3:** mradermacher (quants of nearly everything, static and imatrix
+  "i1" repos) and DavidAU (own finetunes and merges), both off by default.
 - **KoboldCpp output on a pseudo-terminal (macOS, Linux):** its C code prints with C stdio,
   which holds output back in a pipe (and loses it when stopped): no prompt/generation lines,
   no "Detected MTP draft head". With a pseudo-terminal it writes line by line. Color codes are
