@@ -65,7 +65,7 @@ export function enterAnimation(on: boolean) {
   flicker?.cancel();
   flicker = null;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || !document.body.animate) return;
-  const a = document.body.animate(on ? ENTER : LEAVE, { duration: on ? 1700 : 600, easing: "ease-out", fill: "none" });
+  const a = document.body.animate(on ? ENTER : LEAVE, { duration: on ? 850 : 600, iterations: on ? 2 : 1, easing: "ease-out", fill: "none" });
   flicker = a;
   a.onfinish = a.oncancel = () => {
     if (flicker === a) flicker = null;
