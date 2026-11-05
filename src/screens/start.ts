@@ -20,7 +20,9 @@ export function fitPill(f: Fit, fallback = false) {
 }
 
 /** Rough speed for the list (tokens/s); measured speeds replace this later. */
-const estSpeed = (size: number, fit: Fit) => Math.max(1, Math.round((fit === "full" ? 520 : fit === "cpu" ? 60 : 110) / (size / GB + 2)));
+/** "13.3 tokens/s measured" when KoboldCpp ran it here, else "about 18 tokens/s". */
+export const speedText = (tps: number, measured: number | null) =>
+  measured ? `${measured.toFixed(1)} tokens/s measured` : `about ${tps >= 10 ? Math.round(tps) : tps.toFixed(1)} tokens/s`;
 
 /* ---------- data loading ---------- */
 
@@ -102,7 +104,7 @@ function startTemplate(t: Template) {
   getAndStart("t:" + t.id, t.title, files, cfg);
 }
 
-function startPopular(m: PopularItem) {
+export function startPopular(m: PopularItem) {
   const vision = !!m.mmproj && getOpts(m.id).vision;
   const files = [{ url: m.urls[0], size: m.pick.size }];
   if (vision) files.push({ url: m.mmproj![0], size: m.mmproj![1] });
@@ -182,28 +184,7 @@ function popularSection() {
   }
   const list = h("div", { class: "list" });
   if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your model sources." : "Nothing fits. Check that the makers are on in Model Sources."));
-  for (const m of pop.items) {
-    const key = "m:" + m.id;
-    const ctl = goControl(key, m.name, () => startPopular(m), { installed: isDownloaded(m) });
-    // Switching an option on can need files that aren't here yet: the button follows.
-    const opt = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
-      h("label", { class: "pill p-mute opt", for: id, title }, checkbox(id, on, (v) => { set(v); render(); }), label);
-    list.append(h("div", { class: "row" },
-      h("div", { class: "mono-badge fam-" + famClass(m) }, m.name.slice(0, 2)),
-      h("div", { class: "main" },
-        h("div", { class: "name" }, m.name,
-          S.family === null && m.family ? h("span", { class: "pill p-fam" }, families.find((f) => f[0] === m.family)?.[1] ?? m.family) : null,
-          isDownloaded(m) ? h("span", { class: "pill p-ok" }, "Downloaded") : null,
-          kindPill(m),
-          m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
-          ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
-          m.mmproj ? opt(`vis-${m.id}`, "Vision", "Also download and load the vision file so the model can see images", getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })) : null,
-          m.mtp ? opt(`mtp-${m.id}`, "MTP", "Use the model's MTP layers for faster answers (needs a bit more memory)", getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
-        h("div", { class: "sub" }, [m.params, m.pick.quant, fmtBytes(m.pick.size), `about ${estSpeed(m.pick.size, m.pick.fit)} tokens/s`].filter(Boolean).join(" · ")),
-        h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
-        S.dl[key] ? ctl : null),
-      S.dl[key] ? null : ctl));
-  }
+  for (const m of pop.items) list.append(popularRow(m, S.family === null));
   out.push(list);
   if (pop.errors.length) out.push(h("p", { class: "note", style: "margin:-10px 0 0" }, `Not reachable: ${pop.errors.join("; ")}`));
   const hidden = [pop.tooBig ? `${pop.tooBig} too big for this PC, hidden` : "", pop.dupes ? `${pop.dupes} duplicate upload${pop.dupes > 1 ? "s" : ""} merged` : ""].filter(Boolean).join(" · ");
@@ -214,6 +195,32 @@ function popularSection() {
       h("a", { href: "#library", style: "color:var(--accent-text)" }, "Model library"), " · ",
       h("a", { href: "#advanced", style: "color:var(--accent-text)" }, "Advanced setup"))));
   return out;
+}
+
+/** One model row, the same on the start screen and in Discover on Hugging Face:
+ *  name, labels, Vision/MTP options, quant, size, speed, Start or Get and start. */
+export function popularRow(m: PopularItem, showFamily = false) {
+  const key = "m:" + m.id;
+  const ctl = goControl(key, m.name, () => startPopular(m), { installed: isDownloaded(m) });
+  // Switching an option on can need files that aren't here yet: the button follows.
+  const opt = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
+    h("label", { class: "pill p-mute opt", for: id, title }, checkbox(id, on, (v) => { set(v); render(); }), label);
+  return h("div", { class: "row" },
+    h("div", { class: "mono-badge fam-" + famClass(m) }, m.name.slice(0, 2)),
+    h("div", { class: "main" },
+      h("div", { class: "name" }, m.name,
+        showFamily && m.family ? h("span", { class: "pill p-fam" }, families.find((f) => f[0] === m.family)?.[1] ?? m.family) : null,
+        isDownloaded(m) ? h("span", { class: "pill p-ok" }, "Downloaded") : null,
+        kindPill(m),
+        m.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null,
+        ...(m.pick.fit !== "full" || m.pick.fallback ? fitPill(m.pick.fit, m.pick.fallback) : []),
+        m.mmproj ? opt(`vis-${m.id}`, "Vision", "Also download and load the vision file so the model can see images", getOpts(m.id).vision, (v) => setOpts(m.id, { vision: v })) : null,
+        m.mtp ? opt(`mtp-${m.id}`, "MTP", "Use the model's MTP layers for faster answers (needs a bit more memory)", getOpts(m.id).mtp, (v) => setOpts(m.id, { mtp: v })) : null),
+      h("div", { class: "sub", title: m.measured ? "Measured by KoboldCpp on this computer" : "Estimated from this computer's memory bandwidth and the model size" },
+        [m.params, m.pick.quant, fmtBytes(m.pick.size), speedText(m.tps, m.measured)].filter(Boolean).join(" · ")),
+      h("div", { class: "why" }, h("span", { class: "repo" }, m.id), ` · ${fmt(m.downloads)} downloads this month · ${fmt(m.likes)} likes · ${Math.round(m.ageDays)} days old`),
+      S.dl[key] ? ctl : null),
+    S.dl[key] ? null : ctl);
 }
 
 /** Letter-badge colour by model family (no logos). */

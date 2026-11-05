@@ -166,6 +166,16 @@ First full version built in six phases (commits on `main`). Decisions made on th
 - **Appearance** (Advanced setup): "Light" or "KoboldAI Lite". The Lite scheme uses Lite's default
   color scheme "Modern" (`"Default (Cedo)"` in Lite's `themes.js`; the "Aqua" values in Lite's CSS
   are only its fallback). Stored in localStorage, applied before the first render.
+- **Speed (tokens/s):** estimated from memory bandwidth, since each token reads the (active)
+  weights once: time = GPU share ÷ (GPU GB/s × efficiency) + CPU share ÷ (RAM GB/s × 0.5) + a
+  small fixed cost; efficiency 0.7 (discrete GPU) / 0.6 (Apple). Bandwidth per GPU from a table
+  of known models (`hardware::bandwidth_of`); MoE uses the active share from names like "A3B".
+  Calibrated on an M2 (4B Q4 ≈ 15–20 t/s; measured 13.3) and RTX 4090 (8B Q4 ≈ 110 t/s).
+  While a model runs, `/api/extra/perf` `last_eval_speed` is recorded per model file (answers of
+  16+ tokens) and shown as "measured" instead of the estimate. Library sorts by speed (measured
+  first), last used, name or size.
+- **Discover on Hugging Face** answers like the popular list (same rows, quant pick, options,
+  Start / Get and start); results that don't fit are hidden and counted.
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.

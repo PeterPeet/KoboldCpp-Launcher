@@ -196,6 +196,54 @@ pub fn runtime_memory(model: &ModelShape, extras: &Extras, s: &Settings) -> u64 
     (base + cache) as u64
 }
 
+/// Where the model runs, for the speed estimate.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpeedHw {
+    /// GB/s of the selected GPU(s); 0 = no GPU.
+    pub gpu_bandwidth: f64,
+    /// GB/s of main memory.
+    pub cpu_bandwidth: f64,
+    /// Apple Silicon (Metal): different efficiency than discrete GPUs.
+    pub apple: bool,
+}
+
+/// Share of the weights read per token: MoE models only use their active experts.
+/// From names like "Qwen3-30B-A3B" (3 of 30) or "gpt-oss-120b" (5.1 of 117, known).
+pub fn active_ratio(name: &str) -> f64 {
+    let u = name.to_ascii_uppercase();
+    let words: Vec<&str> = u.split(['-', '_', ' ']).collect();
+    let billions = |w: &str| w.strip_suffix('B').and_then(|n| n.parse::<f64>().ok());
+    for (i, w) in words.iter().enumerate() {
+        if let Some(active) = w.strip_prefix('A').and_then(billions)
+            && let Some(total) = words[..i].iter().rev().find_map(|w| billions(w))
+            && total > active
+        {
+            return (active / total).clamp(0.02, 1.0);
+        }
+    }
+    if u.contains("GPT-OSS-120B") {
+        return 5.1 / 117.0;
+    }
+    if u.contains("GPT-OSS-20B") {
+        return 3.6 / 21.0;
+    }
+    1.0
+}
+
+/// Estimated generation speed (tokens/s). Each token reads the (active) weights once, so the time
+/// per token is bytes ÷ usable bandwidth for the GPU and CPU shares, plus a small fixed cost.
+/// Calibrated on: Apple M2 + 4B Q4 ≈ 13–20 t/s, RTX 4090 + 8B Q4 ≈ 110 t/s.
+pub fn estimate_tps(size: u64, active: f64, gpu_share: f64, hw: &SpeedHw) -> f64 {
+    let gb = size as f64 / GIB * active;
+    let gpu_share = if hw.gpu_bandwidth > 0.0 { gpu_share.clamp(0.0, 1.0) } else { 0.0 };
+    let (eff_gpu, overhead) = if hw.apple { (0.6, 0.006) } else { (0.7, 0.002) };
+    let gpu_t = if gpu_share > 0.0 { gb * gpu_share / (hw.gpu_bandwidth * eff_gpu) } else { 0.0 };
+    let cpu_t = gb * (1.0 - gpu_share) / (hw.cpu_bandwidth.max(10.0) * 0.5);
+    let t = gpu_t + cpu_t + if gpu_share < 1.0 { 0.006 } else { overhead };
+    1.0 / t
+}
+
 /// Quants we prefer, best first (design notes: beginners don't choose).
 pub const PREFERRED: &[&str] = &["Q6_K", "Q5_K_M", "Q4_K_M"];
 
@@ -332,6 +380,23 @@ mod tests {
     fn apple_unified_memory_is_all_or_nothing() {
         assert_eq!(fit_by_size(10 * G, 16384, 16 * G, 24 * G, true), Fit::Full);
         assert_eq!(fit_by_size(20 * G, 16384, 16 * G, 24 * G, true), Fit::None);
+    }
+
+    #[test]
+    fn speed_estimates_are_plausible() {
+        let m2 = SpeedHw { gpu_bandwidth: 100.0, cpu_bandwidth: 100.0, apple: true };
+        let t = estimate_tps((2.7 * GIB) as u64, 1.0, 1.0, &m2);
+        assert!((12.0..=25.0).contains(&t), "M2, 4B Q4: {t}");
+        let g4090 = SpeedHw { gpu_bandwidth: 1008.0, cpu_bandwidth: 60.0, apple: false };
+        let t = estimate_tps((4.9 * GIB) as u64, 1.0, 1.0, &g4090);
+        assert!((90.0..=140.0).contains(&t), "4090, 8B Q4: {t}");
+        // half on the CPU is much slower
+        assert!(estimate_tps((16.0 * GIB) as u64, 1.0, 0.5, &g4090) < 10.0);
+        // MoE: only active experts are read
+        assert!((active_ratio("Qwen3-30B-A3B-Instruct") - 0.1).abs() < 1e-9);
+        assert_eq!(active_ratio("Qwen3-8B"), 1.0);
+        assert!((active_ratio("unsloth/Qwen3-235B-A22B-GGUF") - 22.0 / 235.0).abs() < 1e-9);
+        assert!(active_ratio("gpt-oss-20b") < 0.2);
     }
 
     #[test]

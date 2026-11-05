@@ -71,7 +71,15 @@ export function logView() {
   return pre;
 }
 
+/** While a model runs, ask KoboldCpp for the speed of the last answer; Rust stores it per model. */
+function pollSpeed() {
+  setInterval(() => {
+    if (S.server.state === "running") api.serverPerf().catch(() => {});
+  }, 15000);
+}
+
 export function initServer() {
+  pollSpeed();
   api.serverStatus().then((s) => { S.server = s; setStatus(); }).catch(() => {});
   on<{ type: string; status?: ServerStatus; line?: string }>("server", (ev) => {
     if (ev.type === "log" && ev.line != null) {

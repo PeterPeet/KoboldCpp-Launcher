@@ -27,8 +27,10 @@ export const S = {
     confirm: null as string | null,
     /** Show only models that run on this computer. */
     runsOnly: false,
+    /** Card order. */
+    sort: "speed" as "speed" | "used" | "name" | "size",
   },
-  adv: { page: "hardware" },
+  adv: { page: "presets" },
   /** Launch config edited on the advanced page (a .kcpps as JSON). */
   cfg: {} as Record<string, unknown>,
   server: { state: "stopped" } as ServerStatus,
@@ -50,7 +52,20 @@ export const S = {
 export const vram = () => (S.hw?.gpus ?? []).reduce((a, g, i) => a + (S.useGpu[i] !== false ? g.vram : 0), 0);
 
 /** What fit calculations need about this PC with the current GPU selection. */
-export const machine = (context = 16384): Machine => ({ vram: vram(), ram: S.hw?.ramTotal ?? 0, unified: !!S.hw?.unifiedMemory && vram() > 0, context });
+export const machine = (context = 16384): Machine => ({ vram: vram(), ram: S.hw?.ramTotal ?? 0, unified: !!S.hw?.unifiedMemory && vram() > 0, context, speed: speedHw() });
+
+/** Bandwidths of the selected GPUs: layers run one after another, so time adds up per share. */
+function speedHw(): Machine["speed"] {
+  const hw = S.hw;
+  const cpu = hw?.ramBandwidth ?? 60;
+  const sel = (hw?.gpus ?? []).filter((_, i) => S.useGpu[i] !== false);
+  const total = sel.reduce((a, g) => a + g.vram, 0);
+  if (!hw || !total) return { gpuBandwidth: 0, cpuBandwidth: cpu, apple: !!hw?.unifiedMemory };
+  // Unknown cards: a middle value (discrete) or main memory (integrated).
+  const bw = (g: (typeof sel)[number]) => g.bandwidth ?? (g.discrete ? 300 : cpu);
+  const secPerByte = sel.reduce((a, g) => a + g.vram / total / bw(g), 0);
+  return { gpuBandwidth: 1 / secPerByte, cpuBandwidth: cpu, apple: hw.unifiedMemory };
+}
 
 // Registered by main.ts so screens can trigger a redraw without import cycles.
 let renderFn = () => {};

@@ -1,7 +1,7 @@
 // Browser-preview data (only loaded outside the desktop app). Mirrors the Rust logic roughly so
 // the UI can be checked in a normal browser; real numbers come from src-tauri.
 
-import type { SearchHit, Fit, LibraryView, LocalModel, Machine, ModelKind, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
+import type { Fit, LibraryView, LocalModel, Machine, ModelKind, PopularItem, PopularResult, QuantPick, Ranked, RepoFiles, Source, Template } from "./api";
 import { DRIVES, LOCAL, MODELS, TEMPLATES } from "./data";
 
 const GB = 1024 ** 3;
@@ -57,13 +57,14 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
     const p = pick(x.quants, m);
     if (!p) { tooBig++; continue; }
     kept++;
-    const item: PopularItem = { ...toRanked(x, si), pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF"), modelDownloaded: x.repo.includes("LFM3-1.7B-GGUF") || x.repo.includes("Qwen3-VL"), mmprojDownloaded: false, mtp: x.repo.includes("Qwen3.8") };
+    const item: PopularItem = { ...toRanked(x, si), tps: mockTps(p.size, m), measured: null, pick: p, urls: [`https://huggingface.co/${x.repo}/resolve/main/model-${p.quant}.gguf`], mmproj: x.tags.includes("sees images") ? [`https://huggingface.co/${x.repo}/resolve/main/mmproj-F16.gguf`, 0.9 * GB] : null, downloaded: x.repo.includes("LFM3-1.7B-GGUF"), modelDownloaded: x.repo.includes("LFM3-1.7B-GGUF") || x.repo.includes("Qwen3-VL"), mmprojDownloaded: false, mtp: x.repo.includes("Qwen3.8") };
     const cur = best.get(x.base);
     if (!cur || si < cur.source) best.set(x.base, item);
   }
   const key = (i: PopularItem) => (o.sort === "likes" ? i.likes : o.sort === "newest" ? -i.ageDays : o.sort === "trending" ? i.score : i.downloads);
   let items = [...best.values()].sort((a, b) => key(b) - key(a));
-  if (family) items = items.filter((i) => i.family === family);
+  if (family === "__all") { /* search: everything */ }
+  else if (family) items = items.filter((i) => i.family === family);
   else {
     const seen = new Set<string>();
     items = items.filter((i) => i.family && !seen.has(i.family) && seen.add(i.family));
@@ -71,9 +72,17 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
   return { items, tooBig, dupes: kept - items.length, errors: [] };
 }
 
-export function mockSearch(q: string): SearchHit[] {
+export function mockSearch(q: string, m: Machine, sources: Source[]): PopularResult {
   const l = q.toLowerCase();
-  return MODELS.filter((x) => (x.name + x.repo).toLowerCase().includes(l)).map((x) => ({ ...toRanked(x, 0), typical: x.quants.Q4_K_M ? ["Q4_K_M", x.quants.Q4_K_M * GB] : null }));
+  const all = mockPopular({ officialOnly: false, showUncensored: true, sort: "downloads" }, m, sources.map((s) => ({ ...s, on: true })), "__all");
+  return { ...all, items: all.items.filter((i) => (i.name + i.id).toLowerCase().includes(l)) };
+}
+
+/** Same idea as fit::estimate_tps, roughly. */
+export function mockTps(size: number, m: Machine) {
+  const gb = size / GB;
+  const bw = m.speed.gpuBandwidth || m.speed.cpuBandwidth * 0.7;
+  return 1 / (gb / (bw * (m.speed.apple ? 0.6 : 0.7)) + (m.speed.apple ? 0.006 : 0.002));
 }
 
 export function mockRepoFiles(repo: string): RepoFiles {

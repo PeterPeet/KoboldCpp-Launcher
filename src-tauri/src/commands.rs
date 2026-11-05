@@ -346,7 +346,21 @@ pub fn server_logs(state: State<'_, AppState>, last: Option<usize>) -> Vec<Strin
 pub async fn server_perf(state: State<'_, AppState>) -> CmdResult<Value> {
     let ServerStatus::Running { port } = state.server.status() else { return Err("KoboldCpp is not running".into()) };
     let r = state.http.get(format!("http://127.0.0.1:{port}/api/extra/perf")).timeout(Duration::from_secs(3)).send().await.map_err(err)?;
-    r.json().await.map_err(err)
+    let perf: Value = r.json().await.map_err(err)?;
+    // Remember how fast this model really is here (answers of at least 16 tokens).
+    let speed = perf.get("last_eval_speed").and_then(Value::as_f64).filter(|s| *s > 0.0);
+    let count = perf.get("last_token_count").and_then(Value::as_f64).unwrap_or(0.0);
+    let model = state.last_run.lock().map_err(err)?.as_ref().and_then(|c| c.model()).filter(|m| !config::kcpps::is_url(m));
+    if let (Some(speed), Some(model)) = (speed, model)
+        && count >= 16.0
+        && state.settings().speeds.get(&model).is_none_or(|old| (old - speed).abs() > 0.05)
+    {
+        let rounded = (speed * 10.0).round() / 10.0;
+        state.update_settings(|s| {
+            s.speeds.insert(model, rounded);
+        })?;
+    }
+    Ok(perf)
 }
 
 /* ---------- Hugging Face, templates, downloads ---------- */
@@ -387,6 +401,18 @@ pub struct Machine {
     pub ram: u64,
     pub unified: bool,
     pub context: u32,
+    /// Bandwidths for the speed estimate.
+    #[serde(default)]
+    pub speed: fit::SpeedHw,
+}
+
+/// Share of the model on the GPU for the speed estimate.
+fn gpu_share(fit: fit::Fit, size: u64, vram: u64) -> f64 {
+    match fit {
+        fit::Fit::Full => 1.0,
+        fit::Fit::Cpu | fit::Fit::None => 0.0,
+        fit::Fit::Partial => (vram as f64 * 0.85 / size.max(1) as f64).clamp(0.0, 1.0),
+    }
 }
 
 #[derive(Serialize)]
@@ -406,6 +432,10 @@ pub struct PopularItem {
     pub mmproj_downloaded: bool,
     /// The repo ships MTP layers (see `RepoFiles::mtp`).
     pub mtp: bool,
+    /// Estimated generation speed on this PC (tokens/s).
+    pub tps: f64,
+    /// Speed KoboldCpp reported for this file here, if it has run before.
+    pub measured: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -445,7 +475,7 @@ async fn gather(h: &crate::hf::client::Hf<'_>, sources: &[crate::hf::Source], te
 }
 
 /// Pick a quant for each candidate (in order) until `want` fit; counts the ones too big.
-async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
+async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, speeds: &std::collections::HashMap<String, f64>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
     let files = futures_util::future::join_all(cands.iter().map(|m| h.files(&m.id))).await;
     let mut items: Vec<PopularItem> = Vec::new();
     let mut too_big = 0;
@@ -462,7 +492,9 @@ async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, can
         let model_downloaded = urls.iter().all(|u| local_file(models, u, single.then_some(pick.size)).is_some());
         let mmproj_downloaded = mmproj.as_ref().is_some_and(|(u, s)| local_file(models, u, Some(*s)).is_some());
         let downloaded = model_downloaded && (mmproj.is_none() || mmproj_downloaded);
-        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded, model_downloaded, mmproj_downloaded, mtp: f.mtp });
+        let tps = fit::estimate_tps(pick.size, fit::active_ratio(&m.id), gpu_share(pick.fit, pick.size, machine.vram), &machine.speed);
+        let measured = local_file(models, &urls[0], single.then_some(pick.size)).and_then(|p| speeds.get(&p.to_string_lossy().to_string()).copied());
+        items.push(PopularItem { model: m, pick, urls, mmproj, downloaded, model_downloaded, mmproj_downloaded, mtp: f.mtp, tps, measured });
     }
     // Keep ranking order, but a normal quant beats a squeezed fallback.
     items.sort_by_key(|i| i.pick.fallback);
@@ -477,18 +509,19 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
     let h = hf(&state);
     let sources = state.settings().sources;
     let models = state.settings().models_dir(&state.dirs);
+    let speeds = state.settings().speeds;
     let now = now_unix();
     if let Some(fam) = family {
         let f = crate::hf::FAMILIES.iter().find(|f| f.id == fam).ok_or("Unknown model family")?;
         let (entries, errors) = gather(&h, &sources, f.terms, options.sort).await;
         let ranked = crate::hf::rank(&entries, &sources, options, now);
         let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(fam.as_str())).take(30).collect();
-        let (items, too_big) = with_picks(&h, &models, cands, &machine, 20).await;
+        let (items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 20).await;
         return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors });
     }
     let maker_on = |m: &str| sources.iter().any(|s| s.on && s.name.eq_ignore_ascii_case(m));
     let per_family = crate::hf::FAMILIES.iter().filter(|f| maker_on(f.maker)).map(|f| {
-        let (h, sources, machine, models) = (&h, &sources, &machine, &models);
+        let (h, sources, machine, models, speeds) = (&h, &sources, &machine, &models, &speeds);
         async move {
             let (entries, errors) = gather(h, sources, f.terms, options.sort).await;
             let ranked = crate::hf::rank(&entries, sources, options, now);
@@ -499,7 +532,7 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
             // The maker's own uploads first (in the chosen order), quants of its models after.
             cands.sort_by_key(|m| m.kind != crate::hf::Kind::Official);
             cands.truncate(12);
-            let (items, _) = with_picks(h, models, cands, machine, 1).await;
+            let (items, _) = with_picks(h, models, speeds, cands, machine, 1).await;
             (items, errors)
         }
     });
@@ -514,52 +547,43 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
     Ok(PopularResult { items, too_big: 0, dupes: 0, errors })
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchHit {
-    #[serde(flatten)]
-    pub model: crate::hf::Ranked,
-    /// Q4_K_M size if the repo has it, else the closest common quant: (quant, bytes).
-    pub typical: Option<(String, u64)>,
-}
-
+/// Hugging Face search, answered like the popular list: best fitting quant, speed, options.
 #[tauri::command]
-pub async fn search_models(state: State<'_, AppState>, query: String) -> CmdResult<Vec<SearchHit>> {
+pub async fn search_models(state: State<'_, AppState>, query: String, machine: Machine) -> CmdResult<PopularResult> {
     let h = hf(&state);
+    let models = state.settings().models_dir(&state.dirs);
+    let speeds = state.settings().speeds;
     let entries = h.search(&query, 30).await.map_err(err)?;
-    // Search shows everything that matches, from any uploader (no source filter).
     let now = now_unix();
-    let files = futures_util::future::join_all(entries.iter().map(|e| h.files(&e.id))).await;
-    Ok(entries
+    // Search shows everything that matches, from any uploader (no source filter), most downloaded first.
+    let cands: Vec<crate::hf::Ranked> = entries
         .iter()
-        .zip(files)
-        .map(|(e, f)| {
+        .filter(|e| crate::hf::is_text_model(e))
+        .map(|e| {
             let kind = crate::hf::kind_of(e);
-            let typical = f.ok().and_then(|f| {
-                ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q6_K", "Q8_0"].iter().find_map(|q| f.quant(q).map(|x| (q.to_string(), x.size)))
-            });
-            SearchHit {
-                model: crate::hf::Ranked {
-                    id: e.id.clone(),
-                    name: crate::hf::display_name(e.repo_name()),
-                    author: e.author().into(),
-                    params: crate::hf::params_from_name(e.repo_name()),
-                    kind,
-                    official: kind == crate::hf::Kind::Official,
-                    family: crate::hf::family_of(&e.id).map(str::to_string),
-                    uncensored: crate::hf::is_uncensored(e),
-                    likes: e.likes,
-                    downloads: e.downloads,
-                    age_days: crate::hf::age_days(e.created_at.as_deref(), now),
-                    score: crate::hf::score(e, now),
-                    source: 0,
-                    base_model: e.base_model().map(str::to_string),
-                    tags: e.tags.clone(),
-                },
-                typical,
+            crate::hf::Ranked {
+                id: e.id.clone(),
+                name: crate::hf::display_name(e.repo_name()),
+                author: e.author().into(),
+                params: crate::hf::params_from_name(e.repo_name()),
+                kind,
+                official: kind == crate::hf::Kind::Official,
+                family: crate::hf::family_of(&e.id).map(str::to_string),
+                uncensored: crate::hf::is_uncensored(e),
+                likes: e.likes,
+                downloads: e.downloads,
+                age_days: crate::hf::age_days(e.created_at.as_deref(), now),
+                score: crate::hf::score(e, now),
+                source: 0,
+                base_model: e.base_model().map(str::to_string),
+                tags: e.tags.clone(),
             }
         })
-        .collect())
+        .collect();
+    let (mut items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 30).await;
+    // with_picks prefers normal quants over fallbacks; keep the search order (downloads) otherwise.
+    items.sort_by(|a, b| a.pick.fallback.cmp(&b.pick.fallback).then(b.model.downloads.cmp(&a.model.downloads)));
+    Ok(PopularResult { items, too_big, dupes: 0, errors: vec![] })
 }
 
 /// Model families for the start screen filter row: (id, label, maker account).
@@ -846,6 +870,11 @@ pub struct LocalFitInput {
     pub kv_len: Option<u32>,
     /// Size of the vision file loaded with it, if any.
     pub mmproj: Option<u64>,
+    /// File path (for measured speeds) and name (MoE detection).
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -856,19 +885,35 @@ pub struct LocalFit {
     pub gpu_layers: u32,
     /// Estimated memory while running (bytes) at the given context.
     pub memory: u64,
+    /// Estimated generation speed (tokens/s).
+    pub tps: f64,
+    /// Speed KoboldCpp reported for this file, if it has run here.
+    pub measured: Option<f64>,
 }
 
 /// Fit of local models using their GGUF layout (KoboldCpp's layer estimate).
 #[tauri::command]
-pub fn fit_local(items: Vec<LocalFitInput>, machine: Machine) -> Vec<LocalFit> {
+pub fn fit_local(state: State<'_, AppState>, items: Vec<LocalFitInput>, machine: Machine) -> Vec<LocalFit> {
     let s = fit::Settings { context: machine.context, ..Default::default() };
+    let speeds = state.settings().speeds;
     items
         .into_iter()
         .map(|i| {
             let shape = fit::ModelShape { size: i.size, layers: i.layers, head_count_kv: i.head_count_kv, kv_len: i.kv_len };
             let extras = fit::Extras { mmproj: i.mmproj.unwrap_or(0), ..Default::default() };
             let (fit, gpu_layers) = fit::fit_by_layers(&shape, &extras, &s, machine.vram, 0, machine.ram, machine.unified);
-            LocalFit { fit, gpu_layers, memory: fit::runtime_memory(&shape, &extras, &s) }
+            let share = match (fit, i.layers) {
+                (fit::Fit::Partial, Some(l)) if l > 0 => (gpu_layers as f64 / (l + 1) as f64).min(1.0),
+                _ => gpu_share(fit, i.size, machine.vram),
+            };
+            let name = i.name.as_deref().unwrap_or("");
+            LocalFit {
+                fit,
+                gpu_layers,
+                memory: fit::runtime_memory(&shape, &extras, &s),
+                tps: fit::estimate_tps(i.size, fit::active_ratio(name), share, &machine.speed),
+                measured: i.path.as_ref().and_then(|p| speeds.get(p).copied()),
+            }
         })
         .collect()
 }

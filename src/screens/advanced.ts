@@ -20,8 +20,9 @@ const ICONS: Record<string, string> = {
   appearance: "M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.5 0-.9-.6-1.3-.6-2 0-.8.6-1.5 1.5-1.5H17a4 4 0 004-4c0-5-4-9-9-9z M7.5 11.5h.01 M10 7.5h.01 M14 7.5h.01 M16.5 11h.01",
 };
 const PAGES: [string, string][] = [
-  ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"], ["images", "Images"],
-  ["voice", "Voice and audio"], ["network", "Network"], ["presets", "Presets"], ["logs", "Logs"], ["appearance", "Appearance"],
+  ["presets", "KoboldCpp Presets"], ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"],
+  ["images", "Images"], ["voice", "Voice and audio"], ["network", "Network"],
+  ["appearance", "Launcher Appearance"], ["logs", "Logs"],
 ];
 
 /* ---------- config state ---------- */
@@ -313,7 +314,7 @@ async function importConfig() {
 
 function presetsPage(pane: HTMLElement) {
   if (presets === null) loadPresets();
-  pane.append(title("Presets"));
+  pane.append(title("KoboldCpp Presets"));
   const grp = h("div", { class: "grp" });
   for (const p of presets ?? [])
     grp.append(row(p.name, h("span", { style: "display:inline-flex;gap:6px" },
@@ -383,7 +384,7 @@ function appearancePage(pane: HTMLElement) {
         h("i", { style: `background:${body};position:relative` },
           h("i", { style: `position:absolute;left:12px;bottom:12px;width:64px;height:16px;border-radius:6px;background:${accent}` }))),
       h("div", { class: "lbl" }, label, h("small", {}, hint)));
-  pane.append(title("Appearance"),
+  pane.append(title("Launcher Appearance"),
     h("p", { class: "note", style: "margin:0" }, "Color scheme of the launcher. Applies right away."),
     h("div", { class: "themes", role: "radiogroup", "aria-label": "Color scheme" },
       choice("light", "Light", "Bright and neutral", "#ffffff", "#eef0f4", "#3451d1"),

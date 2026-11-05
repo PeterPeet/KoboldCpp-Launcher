@@ -1,11 +1,10 @@
 // Model library: local models as cards with filters, plus Hugging Face search and download.
 
-import { api, fmtBytes, inTauri, type LibraryView, type LocalFit, type LocalModel, type RepoFiles, type SearchHit } from "../api";
-import { $, checkbox, fmt, h, toast, type Kid } from "../dom";
-import { getAndStart, goControl } from "../downloads";
+import { api, fmtBytes, inTauri, type LibraryView, type LocalFit, type LocalModel, type PopularResult } from "../api";
+import { $, checkbox, h, toast, type Kid } from "../dom";
 import { launch, stop } from "../server";
 import { S, machine, render } from "../state";
-import { famClass, kindPill } from "./start";
+import { famClass, popularRow, speedText } from "./start";
 import { getOpts, setOpts } from "../modelopts";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
@@ -15,7 +14,7 @@ let view: LibraryView | null = null;
 let loading = false;
 let fits: Record<string, LocalFit> = {};
 let fitKey = "";
-let search: { q: string; results: SearchHit[] | null; error: string; open: string | null; files: RepoFiles | null; seq: number } = { q: "", results: null, error: "", open: null, files: null, seq: 0 };
+let search: { q: string; result: PopularResult | null; error: string; seq: number } = { q: "", result: null, error: "", seq: 0 };
 let searchTimer: number | undefined;
 
 /** Forget the last scan; the next visit (or render while visible) scans again. */
@@ -44,9 +43,33 @@ async function loadFits() {
   const ms = view.models;
   const sizeOf = (p: string | null) => (p ? view!.models.find((x) => x.path === p)?.size ?? 0.9 * 1024 ** 3 : null);
   // KoboldCpp's own layer estimate with the GGUF layout, at the context the launcher starts with.
-  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: getOpts(m.path).vision ? sizeOf(m.mmproj) : null })), machine(16384));
+  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: getOpts(m.path).vision ? sizeOf(m.mmproj) : null, path: m.path, name: m.name + " " + m.file })), machine(16384));
   fits = Object.fromEntries(ms.map((m, i) => [m.path, r[i]]));
   renderLibGrid();
+}
+
+const SORTS: [string, string][] = [["speed", "Speed (measured first)"], ["used", "Last used"], ["name", "Name"], ["size", "Size"]];
+
+/** Order the cards. Models that can't run here always go last. */
+function sortModels(items: LocalModel[]) {
+  const runs = (m: LocalModel) => (runStatus(m, fits[m.path]).start === "no" ? 1 : 0);
+  const by: Record<string, (a: LocalModel, b: LocalModel) => number> = {
+    // Measured speeds first (fastest on top), then estimates, then models without a speed
+    // (image, voice, embedding).
+    speed: (a, b) => {
+      const rank = (m: LocalModel) => {
+        if (!(m.kind === "Text" || m.kind === "Vision")) return [2, 0];
+        const f = fits[m.path];
+        return f?.measured ? [0, f.measured] : [1, f?.tps ?? 0];
+      };
+      const [ga, va] = rank(a), [gb, vb] = rank(b);
+      return ga - gb || vb - va;
+    },
+    used: (a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0),
+    name: (a, b) => a.name.localeCompare(b.name),
+    size: (a, b) => b.size - a.size,
+  };
+  items.sort((a, b) => runs(a) - runs(b) || (by[S.lib.sort] ?? by.speed)(a, b));
 }
 
 /** Can this model run here? Checked in order: readable file, all parts, architecture, memory. */
@@ -261,62 +284,31 @@ function onSearchInput(value: string) {
   clearTimeout(searchTimer);
   if (value.trim().length < 2) {
     search.seq++;
-    search.results = null;
+    search.result = null;
     search.error = "";
-    search.open = null;
     renderLibGrid();
     return;
   }
   searchTimer = window.setTimeout(runSearch, 350);
 }
 
+/** Same answer as the popular list: best quant for this PC, speed, Vision/MTP, Start or Get and start. */
 async function runSearch() {
   const q = search.q.trim();
   if (q.length < 2) return;
   const seq = ++search.seq;
   search.error = "";
-  search.open = null;
-  if (search.results === null) renderLibGrid();
+  if (search.result === null) renderLibGrid();
   try {
-    const r = await api.search(q);
+    const r = await api.search(q, machine());
     if (seq !== search.seq) return;
-    search.results = r;
+    search.result = r;
   } catch (e) {
     if (seq !== search.seq) return;
     search.error = String(e);
-    search.results = [];
+    search.result = { items: [], tooBig: 0, dupes: 0, errors: [] };
   }
   renderLibGrid();
-}
-
-async function openRepo(id: string) {
-  search.open = search.open === id ? null : id;
-  search.files = null;
-  renderLibGrid();
-  if (!search.open) return;
-  try {
-    search.files = await api.repoFiles(id);
-  } catch (e) {
-    toast(String(e));
-  }
-  renderLibGrid();
-}
-
-function repoFilesView(r: SearchHit) {
-  const f = search.files;
-  if (!f) return h("div", { class: "note", style: "margin:6px 0 0" }, "Loading files…");
-  if (!f.quants.length) return h("div", { class: "note", style: "margin:6px 0 0" }, "No GGUF model files in this repo.");
-  const mm = f.mmproj.find(([p]) => /f16/i.test(p)) ?? f.mmproj[0];
-  const box = h("div", { class: "quants" });
-  for (const q of [...f.quants].sort((a, b) => a.size - b.size)) {
-    const key = `d:${r.id}:${q.label}`;
-    const files = [{ url: `https://huggingface.co/${r.id}/resolve/main/${q.files[0]}`, size: q.size }];
-    if (mm) files.push({ url: `https://huggingface.co/${r.id}/resolve/main/${mm[0]}`, size: mm[1] });
-    box.append(h("div", { class: "qrow" },
-      h("span", { class: "mono" }, q.label), h("span", {}, fmtBytes(q.size) + (q.files.length > 1 ? ` · ${q.files.length} parts` : "")),
-      goControl(key, `${r.name} ${q.label}`, () => getAndStart(key, `${r.name}`, files, { model_param: files[0].url, ...(mm ? { mmproj: files[1].url } : {}) }).then(reloadLibrary), { text: "Get and start" })));
-  }
-  return box;
 }
 
 function renderLibGrid() {
@@ -335,24 +327,15 @@ function renderLibGrid() {
       setTimeout(() => input?.focus());
     }
     const results = $("#hfResults")!;
-    const list = h("div", { class: "list" });
-    for (const r of search.results ?? []) {
-      list.append(h("div", { class: "row", style: "align-items:flex-start" },
-        h("div", { class: `mono-badge fam-${famClass(r)}` }, r.name.slice(0, 2)),
-        h("div", { class: "main" },
-          h("div", { class: "name" }, r.name, kindPill(r), r.uncensored ? h("span", { class: "pill p-warn" }, "Uncensored") : null),
-          h("div", { class: "repo" }, r.id),
-          h("div", { class: "why" }, `${fmt(r.downloads)} downloads this month · ${fmt(r.likes)} likes · ${Math.round(r.ageDays)} days old`),
-          search.open === r.id ? repoFilesView(r) : null),
-        h("span", { class: "typ", title: r.typical ? `Size of the ${r.typical[0]} file` : "No common quant found" }, r.typical ? `${r.typical[0]} · ${fmtBytes(r.typical[1])}` : "–"),
-        h("button", { onclick: () => openRepo(r.id) }, search.open === r.id ? "Close" : "Choose file")));
-    }
+    const r = search.result;
+    const list = h("div", { class: "list" }, ...(r?.items ?? []).map((m) => popularRow(m)));
     const typing = search.q.trim().length >= 2;
     results.replaceChildren(
-      search.results === null
+      r === null
         ? (typing ? h("div", { class: "empty" }, "Searching…") : h("div", { class: "empty" }, "Type a model name to search."))
         : search.error ? h("div", { class: "empty" }, search.error)
-        : search.results.length ? list : h("div", { class: "empty" }, "No GGUF models found."));
+        : r.items.length ? list : h("div", { class: "empty" }, r.tooBig ? "Nothing that fits this PC." : "No GGUF models found."),
+      ...(r?.tooBig ? [h("div", { class: "foot" }, h("span", {}, `${r.tooBig} too big for this PC, hidden`))] : []));
     return;
   }
 
@@ -370,6 +353,7 @@ function renderLibGrid() {
     (!qq || (m.name + m.file).toLowerCase().includes(qq)) &&
     (!L.runsOnly || runStatus(m, fits[m.path]).start === "yes"));
   const total = items.reduce((a, m) => a + m.size, 0);
+  sortModels(items);
   const grid = h("div", { class: "grid" });
   const kv = (k: string, v: Kid, style?: string) => h("div", { class: "kv" }, h("span", {}, k), h("span", { style }, v));
 
@@ -412,6 +396,10 @@ function renderLibGrid() {
         h("span", {}, "RAM (estimated)"), h("span", {}, fits[m.path] ? fmtBytes(fits[m.path].memory) : "…")) : null,
       kv("Context", m.contextLength ? `${Math.round(m.contextLength / 1024)}K` : "–"),
       kv("Layers", m.layers ?? "–"),
+      m.format === "gguf" && (m.kind === "Text" || m.kind === "Vision")
+        ? h("div", { class: "kv", title: fits[m.path]?.measured ? "Measured by KoboldCpp on this computer (last answer)" : "Estimated from this computer's memory bandwidth and the model size" },
+            h("span", {}, "Speed"), h("span", {}, fits[m.path] ? speedText(fits[m.path].tps, fits[m.path].measured).replace(" tokens/s", " t/s") : "…"))
+        : null,
       kv("Drive", m.drive === "/" ? "System disk" : m.drive ?? "–"),
       kv("Last used", ago(m.lastUsed)),
       opts,
@@ -422,6 +410,13 @@ function renderLibGrid() {
     ? h("div", { class: "empty" }, "No models yet. Start one from the start screen, download from Hugging Face, or add a folder that has .gguf files.")
     : h("div", { class: "empty" }, "No models match these filters.");
   body.replaceChildren(h("div", { style: "display:grid;gap:10px" },
-    h("div", { class: "note", style: "margin:0" }, `${items.length} models · ${fmtBytes(total)}`),
+    h("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap" },
+      h("div", { class: "note", style: "margin:0" }, `${items.length} models · ${fmtBytes(total)}`),
+      (() => {
+        const s = h("select", { id: "libSort", "aria-label": "Sort models" },
+          ...SORTS.map(([v, l]) => h("option", { value: v, selected: L.sort === v }, l))) as HTMLSelectElement;
+        s.addEventListener("change", () => { L.sort = s.value as typeof L.sort; renderLibGrid(); });
+        return h("label", { class: "sortlbl" }, "Sort:", s);
+      })()),
     items.length ? grid : empty));
 }

@@ -80,6 +80,8 @@ pub struct Settings {
     pub sources: Vec<crate::hf::Source>,
     /// Model path → last start (unix seconds).
     pub last_used: std::collections::HashMap<String, u64>,
+    /// Model path → generation speed KoboldCpp reported (tokens/s), from the last answers.
+    pub speeds: std::collections::HashMap<String, f64>,
 }
 
 impl Default for Settings {
@@ -92,6 +94,7 @@ impl Default for Settings {
             library_folders: vec![],
             sources: crate::hf::default_sources(),
             last_used: Default::default(),
+            speeds: Default::default(),
         }
     }
 }

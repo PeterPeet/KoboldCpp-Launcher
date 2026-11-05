@@ -14,10 +14,10 @@ export type Backend =
   | { kind: "vulkan"; gpus: number[] }
   | { kind: "cpu" };
 
-export interface Gpu { index: number; name: string; api: "cuda" | "rocm" | "vulkan" | "metal"; vram: number; vramFree: number | null; discrete: boolean }
+export interface Gpu { index: number; name: string; api: "cuda" | "rocm" | "vulkan" | "metal"; vram: number; vramFree: number | null; discrete: boolean; bandwidth: number | null }
 export interface HardwareInfo {
   os: string; arch: string; cpuName: string; logicalCpus: number; defaultThreads: number; avx2: boolean | null;
-  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; suggestedBackend: Backend; tier: "low" | "mid" | "high";
+  ramTotal: number; ramAvailable: number; unifiedMemory: boolean; gpus: Gpu[]; ramBandwidth: number; suggestedBackend: Backend; tier: "low" | "mid" | "high";
 }
 export interface InstalledBinary { path: string; version: string | null; asset: string | null }
 export interface BinaryStatus { installed: InstalledBinary | null; present: boolean; asset: string | null }
@@ -50,7 +50,6 @@ export interface Ranked {
   id: string; name: string; author: string; params: string | null; kind: ModelKindHf; official: boolean; family: string | null; uncensored: boolean;
   likes: number; downloads: number; ageDays: number; score: number; source: number; baseModel: string | null; tags: string[];
 }
-export interface SearchHit extends Ranked { typical: [string, number] | null }
 export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[] }
 export interface PopularItem extends Ranked {
   pick: QuantPick; urls: string[]; mmproj: [string, number] | null;
@@ -58,6 +57,8 @@ export interface PopularItem extends Ranked {
   downloaded: boolean; modelDownloaded: boolean; mmprojDownloaded: boolean;
   /** The repo ships MTP layers (faster answers with --usemtp). */
   mtp: boolean;
+  /** Estimated tokens/s here; `measured` when KoboldCpp already ran this file here. */
+  tps: number; measured: number | null;
 }
 export type SortOrder = "trending" | "downloads" | "likes" | "newest";
 export interface PopularResult { items: PopularItem[]; tooBig: number; dupes: number; errors: string[] }
@@ -68,7 +69,11 @@ export interface Source {
   id: string; name: string; builtin: boolean; on: boolean; desc: string;
   comps: { official: boolean; finetune: boolean; unc: boolean } | null;
 }
-export interface Machine { vram: number; ram: number; unified: boolean; context: number }
+export interface Machine {
+  vram: number; ram: number; unified: boolean; context: number;
+  /** Memory bandwidths (GB/s) for the speed estimate. */
+  speed: { gpuBandwidth: number; cpuBandwidth: number; apple: boolean };
+}
 export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector";
 export interface LocalModel {
   path: string; file: string; name: string; kind: ModelKind; architecture: string | null; quant: string | null; sizeLabel: string | null;
@@ -80,7 +85,7 @@ export interface LocalModel {
   /** The file has MTP layers (faster answers with --usemtp). */
   mtp: boolean;
 }
-export interface LocalFit { fit: Fit; gpuLayers: number; memory: number }
+export interface LocalFit { fit: Fit; gpuLayers: number; memory: number; tps: number; measured: number | null }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
 export interface LibraryFolder { path: string; recursive: boolean }
 export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: LibraryFolder[]; modelsDir: string }
@@ -130,9 +135,10 @@ const mockHardware: HardwareInfo = {
   os: "windows", arch: "x86_64", cpuName: "AMD Ryzen 9 7950X", logicalCpus: 32, defaultThreads: 15, avx2: true,
   ramTotal: 64 * GB, ramAvailable: 48 * GB, unifiedMemory: false,
   gpus: [
-    { index: 0, name: "NVIDIA GeForce RTX 4090", api: "cuda", vram: 24 * GB, vramFree: 23 * GB, discrete: true },
-    { index: 1, name: "NVIDIA GeForce RTX 3060", api: "cuda", vram: 12 * GB, vramFree: 11.5 * GB, discrete: true },
+    { index: 0, name: "NVIDIA GeForce RTX 4090", api: "cuda", vram: 24 * GB, vramFree: 23 * GB, discrete: true, bandwidth: 1008 },
+    { index: 1, name: "NVIDIA GeForce RTX 3060", api: "cuda", vram: 12 * GB, vramFree: 11.5 * GB, discrete: true, bandwidth: 360 },
   ],
+  ramBandwidth: 60,
   suggestedBackend: { kind: "cuda", gpu: null, lowvram: false, mmq: true }, tier: "high",
 };
 
@@ -182,7 +188,8 @@ export const api = {
   popular: (options: { officialOnly: boolean; showUncensored: boolean; sort: SortOrder }, machine: Machine, family: string | null) =>
     call<PopularResult>("popular_models", { options, machine, family }, () => import("./mock").then((m) => m.mockPopular(options, machine, mockSettings.sources, family))),
   families: () => call<[string, string, string][]>("model_families", {}, () => [["gemma", "Gemma", "google"], ["qwen", "Qwen", "Qwen"], ["glm", "GLM", "zai-org"], ["deepseek", "DeepSeek", "deepseek-ai"], ["mistral", "Mistral", "mistralai"], ["llama", "Llama", "meta-llama"], ["gpt-oss", "GPT-oss", "openai"], ["nemotron", "Nemotron", "nvidia"]]),
-  search: (query: string) => call<SearchHit[]>("search_models", { query }, () => import("./mock").then((m) => m.mockSearch(query))),
+  search: (query: string, machine: Machine) =>
+    call<PopularResult>("search_models", { query, machine }, () => import("./mock").then((m) => m.mockSearch(query, machine, mockSettings.sources))),
   repoFiles: (repo: string) => call<RepoFiles>("repo_files", { repo }, () => import("./mock").then((m) => m.mockRepoFiles(repo))),
   downloadFiles: (id: string, files: { url: string; size: number | null }[]) =>
     call<[string, string][]>("download_files", { id, files }, async () => {
@@ -197,8 +204,10 @@ export const api = {
   cancelDownload: (id: string) => call<void>("cancel_download", { id }, () => void mockCancelled.add(id)),
   exportSources: (path: string) => call<void>("export_sources", { path }),
 
-  fitLocal: (items: { size: number; layers: number | null; headCountKv: number | null; kvLen: number | null; mmproj: number | null }[], machine: Machine) =>
-    call<LocalFit[]>("fit_local", { items, machine }, () => import("./mock").then((m) => items.map((i) => ({ fit: m.mockFit(i.size + (i.mmproj ?? 0), machine.context, machine), gpuLayers: (i.layers ?? 0) + 1, memory: i.size * 1.15 + (i.mmproj ?? 0) + 1.2 * 1024 ** 3 })))),
+  fitLocal: (items: { size: number; layers: number | null; headCountKv: number | null; kvLen: number | null; mmproj: number | null; path: string; name: string }[], machine: Machine) =>
+    call<LocalFit[]>("fit_local", { items, machine }, () => import("./mock").then((m) => items.map((i) => ({
+      fit: m.mockFit(i.size + (i.mmproj ?? 0), machine.context, machine), gpuLayers: (i.layers ?? 0) + 1,
+      memory: i.size * 1.15 + (i.mmproj ?? 0) + 1.2 * 1024 ** 3, tps: m.mockTps(i.size, machine), measured: i.name.includes("Mistral") ? 31.4 : null })))),
   library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
   addFolder: (path: string, recursive = true) => call<Settings>("add_library_folder", { path, recursive }, () => (mockSettings = { ...mockSettings, libraryFolders: [...mockSettings.libraryFolders, { path, recursive }] })),
   previewFolder: (path: string, recursive: boolean) =>

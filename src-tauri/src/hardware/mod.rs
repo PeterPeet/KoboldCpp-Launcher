@@ -33,6 +33,8 @@ pub struct Gpu {
     pub vram: u64,
     pub vram_free: Option<u64>,
     pub discrete: bool,
+    /// Memory bandwidth in GB/s, when the model is known (see `bandwidth_of`).
+    pub bandwidth: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -58,6 +60,8 @@ pub struct HardwareInfo {
     /// Apple Silicon: GPU and CPU share RAM.
     pub unified_memory: bool,
     pub gpus: Vec<Gpu>,
+    /// Main memory bandwidth in GB/s (estimate; on Apple Silicon the same as the GPU's).
+    pub ram_bandwidth: f64,
     pub suggested_backend: Backend,
     pub tier: Tier,
 }
@@ -147,13 +151,13 @@ fn detect_gpus(ram_total: u64) -> Vec<Gpu> {
             .into_iter()
             .enumerate()
             .filter(|_| apple_silicon)
-            .map(|(i, name)| Gpu { index: i as u32, name, api: GpuApi::Metal, vram: metal_budget(ram_total), vram_free: None, discrete: false })
+            .map(|(i, name)| Gpu { index: i as u32, bandwidth: bandwidth_of(&name), name, api: GpuApi::Metal, vram: metal_budget(ram_total), vram_free: None, discrete: false })
             .collect();
     }
     let to_gpus = |list: Vec<parse::ParsedGpu>, api: GpuApi| -> Vec<Gpu> {
         list.into_iter()
             .enumerate()
-            .map(|(i, g)| Gpu { index: i as u32, name: g.name, api, vram: g.vram_total, vram_free: g.vram_free, discrete: g.discrete })
+            .map(|(i, g)| Gpu { index: i as u32, bandwidth: bandwidth_of(&g.name), name: g.name, api, vram: g.vram_total, vram_free: g.vram_free, discrete: g.discrete })
             .collect()
     };
     if let Some(out) = run("nvidia-smi", &["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader"], t) {
@@ -217,6 +221,8 @@ pub fn detect() -> HardwareInfo {
         ram_total,
         ram_available: sys.as_ref().map_or(0, |s| s.available_memory()),
         unified_memory: unified,
+        // Apple: CPU and GPU share the memory; PCs: assume dual-channel DDR4/DDR5 (~60 GB/s).
+        ram_bandwidth: gpus.iter().find(|g| g.api == GpuApi::Metal).and_then(|g| g.bandwidth).unwrap_or(60.0),
         suggested_backend: suggest_backend(&gpus, avx2),
         tier: tier_for(best_vram),
         gpus,
@@ -228,7 +234,7 @@ mod tests {
     use super::*;
 
     fn gpu(api: GpuApi, gb: u64, discrete: bool) -> Gpu {
-        Gpu { index: 0, name: "x".into(), api, vram: gb * GIB, vram_free: None, discrete }
+        Gpu { index: 0, name: "x".into(), api, vram: gb * GIB, vram_free: None, discrete, bandwidth: None }
     }
 
     #[test]
@@ -262,5 +268,65 @@ mod tests {
     fn metal_budget_share() {
         assert_eq!(metal_budget(24 * GIB), 16 * GIB);
         assert_eq!(metal_budget(64 * GIB), 48 * GIB);
+    }
+}
+
+/// Memory bandwidth in GB/s by device name (published specs). Token generation reads the whole
+/// model once per token, so this is what decides the speed.
+const BANDWIDTH: &[(&str, f64)] = &[
+    // Apple Silicon (unified memory)
+    ("M1 ULTRA", 800.0), ("M1 MAX", 400.0), ("M1 PRO", 200.0), ("M1", 68.0),
+    ("M2 ULTRA", 800.0), ("M2 MAX", 400.0), ("M2 PRO", 200.0), ("M2", 100.0),
+    ("M3 ULTRA", 819.0), ("M3 MAX", 400.0), ("M3 PRO", 150.0), ("M3", 100.0),
+    ("M4 MAX", 546.0), ("M4 PRO", 273.0), ("M4", 120.0), ("M5", 153.0),
+    // NVIDIA
+    ("RTX 5090", 1792.0), ("RTX 5080", 960.0), ("RTX 5070 TI", 896.0), ("RTX 5070", 672.0), ("RTX 5060 TI", 448.0), ("RTX 5060", 448.0),
+    ("RTX 4090", 1008.0), ("RTX 4080 SUPER", 736.0), ("RTX 4080", 717.0), ("RTX 4070 TI SUPER", 672.0), ("RTX 4070 TI", 504.0),
+    ("RTX 4070 SUPER", 504.0), ("RTX 4070", 504.0), ("RTX 4060 TI", 288.0), ("RTX 4060", 272.0),
+    ("RTX 3090 TI", 1008.0), ("RTX 3090", 936.0), ("RTX 3080 TI", 912.0), ("RTX 3080", 760.0), ("RTX 3070 TI", 608.0),
+    ("RTX 3070", 448.0), ("RTX 3060 TI", 448.0), ("RTX 3060", 360.0), ("RTX 3050", 224.0),
+    ("RTX 2080 TI", 616.0), ("RTX 2080", 448.0), ("RTX 2070", 448.0), ("RTX 2060", 336.0),
+    ("GTX 1080 TI", 484.0), ("GTX 1080", 320.0), ("GTX 1070", 256.0), ("GTX 1660 SUPER", 336.0), ("GTX 1660", 192.0),
+    ("RTX 6000 ADA", 960.0), ("RTX A6000", 768.0), ("RTX A4000", 448.0), ("H100", 3350.0), ("A100", 1555.0),
+    ("L40S", 864.0), ("V100", 900.0), ("P40", 346.0),
+    // AMD
+    ("RX 9070 XT", 640.0), ("RX 9070", 640.0), ("RX 7900 XTX", 960.0), ("RX 7900 XT", 800.0), ("RX 7800 XT", 624.0),
+    ("RX 7700 XT", 432.0), ("RX 7600", 288.0), ("RX 6950 XT", 576.0), ("RX 6900 XT", 512.0), ("RX 6800 XT", 512.0),
+    ("RX 6800", 512.0), ("RX 6700 XT", 384.0), ("RX 6600 XT", 256.0), ("MI300X", 5300.0),
+    // Intel
+    ("ARC A770", 560.0), ("ARC A750", 512.0), ("ARC B580", 456.0),
+];
+
+/// Bandwidth of a GPU by name; the most specific (longest) match wins. `None` if unknown.
+pub fn bandwidth_of(name: &str) -> Option<f64> {
+    let n = name.to_ascii_uppercase();
+    let words: Vec<&str> = n.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    // Match whole words, so "M2" doesn't match "M2 PRO" and "RTX 4070" doesn't match "4070 TI".
+    let has = |key: &str| {
+        let k: Vec<&str> = key.split(' ').collect();
+        words.windows(k.len()).any(|w| w == k.as_slice()) && {
+            // the next word after the match must not make it a bigger model ("PRO", "MAX", "TI", …)
+            let pos = words.windows(k.len()).position(|w| w == k.as_slice()).unwrap();
+            !matches!(words.get(pos + k.len()), Some(&("PRO" | "MAX" | "ULTRA" | "TI" | "SUPER" | "XT" | "XTX")))
+        }
+    };
+    BANDWIDTH.iter().filter(|(k, _)| has(k)).max_by_key(|(k, _)| k.len()).map(|(_, b)| *b)
+}
+
+#[cfg(test)]
+mod bandwidth_tests {
+    use super::bandwidth_of;
+
+    #[test]
+    fn names() {
+        assert_eq!(bandwidth_of("Apple M2"), Some(100.0));
+        assert_eq!(bandwidth_of("Apple M2 Pro"), Some(200.0));
+        assert_eq!(bandwidth_of("Apple M4 Max"), Some(546.0));
+        assert_eq!(bandwidth_of("NVIDIA GeForce RTX 4090"), Some(1008.0));
+        assert_eq!(bandwidth_of("NVIDIA GeForce RTX 4070 Ti"), Some(504.0));
+        assert_eq!(bandwidth_of("NVIDIA GeForce RTX 4070"), Some(504.0));
+        assert_eq!(bandwidth_of("NVIDIA GeForce RTX 3060 Ti"), Some(448.0));
+        assert_eq!(bandwidth_of("AMD Radeon RX 7900 XTX"), Some(960.0));
+        assert_eq!(bandwidth_of("Intel(R) UHD Graphics 770"), None);
     }
 }
