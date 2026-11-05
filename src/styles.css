@@ -148,6 +148,12 @@ pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(-
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .card{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--win)}
 .card .acts{margin-top:auto}
+.card.cant-run{background:color-mix(in srgb,var(--bad-soft) 35%,var(--win))}
+.card.cant-run h4{color:var(--fg-2)}
+.runline{font-size:12px;line-height:1.4;padding:6px 8px;border-radius:8px}
+.runline.ok{background:var(--ok-soft);color:var(--ok)}
+.runline.warn{background:var(--warn-soft);color:var(--warn)}
+.runline.bad{background:var(--bad-soft);color:var(--bad)}
 .card .top{display:flex;justify-content:space-between;align-items:center}
 .card h4{margin:0;font-size:15.5px;font-weight:600}
 .card .tags{font-size:12px;color:var(--fg-3);padding-bottom:8px;border-bottom:1px dashed var(--line)}

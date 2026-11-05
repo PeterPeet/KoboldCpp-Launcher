@@ -55,6 +55,7 @@ pub fn run() {
             server_perf,
             templates,
             fits,
+            fit_local,
             popular_models,
             search_models,
             model_families,

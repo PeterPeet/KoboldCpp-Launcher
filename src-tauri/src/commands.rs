@@ -693,9 +693,10 @@ pub struct LibraryView {
 pub async fn library_scan(state: State<'_, AppState>) -> CmdResult<LibraryView> {
     let roots = library_roots(&state);
     let used = state.settings().last_used;
+    let installed = state.settings().binary.and_then(|b| b.version);
     let models_dir = state.settings().models_dir(&state.dirs);
     let folders = roots.iter().map(|(path, recursive)| crate::store::LibraryFolder { path: path.clone(), recursive: *recursive }).collect();
-    let (models, drives) = tauri::async_runtime::spawn_blocking(move || crate::library::scan(&roots, &used)).await.map_err(err)?;
+    let (models, drives) = tauri::async_runtime::spawn_blocking(move || crate::library::scan(&roots, &used, installed.as_deref())).await.map_err(err)?;
     Ok(LibraryView { models, drives, folders, models_dir })
 }
 
@@ -827,4 +828,38 @@ pub fn read_logs(state: State<'_, AppState>) -> Logs {
         launcher: crate::applog::tail(&dir.join("launcher.log"), 256 * 1024),
         dir,
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalFitInput {
+    pub size: u64,
+    pub layers: Option<u32>,
+    pub head_count_kv: Option<u32>,
+    pub kv_len: Option<u32>,
+    /// Size of the vision file loaded with it, if any.
+    pub mmproj: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalFit {
+    pub fit: fit::Fit,
+    /// Layers KoboldCpp would put on the GPU (0 when unknown or CPU only).
+    pub gpu_layers: u32,
+}
+
+/// Fit of local models using their GGUF layout (KoboldCpp's layer estimate).
+#[tauri::command]
+pub fn fit_local(items: Vec<LocalFitInput>, machine: Machine) -> Vec<LocalFit> {
+    let s = fit::Settings { context: machine.context, ..Default::default() };
+    items
+        .into_iter()
+        .map(|i| {
+            let shape = fit::ModelShape { size: i.size, layers: i.layers, head_count_kv: i.head_count_kv, kv_len: i.kv_len };
+            let extras = fit::Extras { mmproj: i.mmproj.unwrap_or(0), ..Default::default() };
+            let (fit, gpu_layers) = fit::fit_by_layers(&shape, &extras, &s, machine.vram, 0, machine.ram, machine.unified);
+            LocalFit { fit, gpu_layers }
+        })
+        .collect()
 }

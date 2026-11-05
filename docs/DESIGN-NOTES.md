@@ -148,6 +148,12 @@ First full version built in six phases (commits on `main`). Decisions made on th
   subfolders, links followed, loops guarded); off = only files directly in the folder. Our own
   downloads folder is always recursive (`<uploader>/<repo>/`). LM Studio keeps models in
   `~/.lmstudio/models/<uploader>/<repo>/` (its `hub/models` folder holds only catalog files).
+- **Runs here?** Each library card says whether the model runs on this computer, checked in order:
+  readable GGUF header, all split parts present, architecture known to the installed KoboldCpp
+  (list from `src/llama-arch.cpp` at the release tag, `tools/extract_archs.py`; only for text,
+  vision and embedding models), memory (KoboldCpp's layer estimate with the GGUF layout at 16K
+  context). Green Start / "Try anyway" (too big, architecture unknown to a newer build) / disabled.
+  A filter shows only models that run here.
 - **Downloaded:** models whose files are already in the models folder get a green "Start".
 - **Remove** moves files to the system Trash, never a hard delete; move and remove only work inside
   library folders.

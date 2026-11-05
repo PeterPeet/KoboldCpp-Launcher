@@ -91,10 +91,12 @@ export function mockLibrary(): LibraryView {
   const kind = (t: string): ModelKind => (t === "Image" || t === "Speech" || t === "Embedding" || t === "Vision" ? t : "Text");
   const models: LocalModel[] = LOCAL.map((m) => ({
     path: `/${m.drive}/models/${m.name.replace(/ /g, "-")}.gguf`, file: `${m.name.replace(/ /g, "-")}.gguf`, name: m.name, kind: kind(m.type),
-    architecture: m.famName.toLowerCase(), quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: 1,
+    architecture: m.famName.toLowerCase(), quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: m.id === 4 ? 3 : 1,
     layers: 40, contextLength: m.ctx === "–" ? null : parseInt(m.ctx) * 1024, headCountKv: 8, kvLen: 128,
     mmproj: m.type === "Vision" ? `/${m.drive}/models/mmproj-F16.gguf` : null, drive: `/${m.drive}`, modified: null,
     lastUsed: m.used === "Never" ? null : Date.now() / 1000 - 86400 * (m.id % 9),
+    missingParts: m.id === 4 ? 1 : 0, readable: true,
+    support: m.type === "Image" || m.type === "Speech" ? null : m.id === 10 ? "no" as const : "yes" as const,
   })).filter((m) => !removed.has(m.path));
   return {
     models,

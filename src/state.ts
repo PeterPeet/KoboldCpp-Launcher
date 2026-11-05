@@ -25,6 +25,8 @@ export const S = {
     fams: new Set<string>(),
     drives: new Set<string>(),
     confirm: null as string | null,
+    /** Show only models that run on this computer. */
+    runsOnly: false,
   },
   adv: { page: "hardware" },
   /** Launch config edited on the advanced page (a .kcpps as JSON). */

@@ -38,6 +38,13 @@ pub struct LocalModel {
     pub drive: Option<String>,
     pub modified: Option<u64>,
     pub last_used: Option<u64>,
+    /// Split parts that should exist next to this one but don't (`-00002-of-00003.gguf`).
+    pub missing_parts: u32,
+    /// The GGUF header could be read (false: damaged or not really a GGUF file).
+    pub readable: bool,
+    /// Can the installed KoboldCpp load this architecture? Only for text, vision and embedding
+    /// models (image and voice models use other engines inside KoboldCpp).
+    pub support: Option<crate::config::archs::Support>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -145,7 +152,8 @@ pub const MAX_DEPTH: u32 = 32;
 
 /// Scan folders for GGUF models: `(folder, recursive)`; recursive folders include all
 /// subfolders, the others only their own files. Split models show once (their first part).
-pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>) -> (Vec<LocalModel>, Vec<Drive>) {
+/// `installed`: version of the installed KoboldCpp (for the architecture check).
+pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, installed: Option<&str>) -> (Vec<LocalModel>, Vec<Drive>) {
     let mut files = Vec::new();
     for (f, recursive) in roots {
         // Each root gets its own loop guard, so a non-recursive root inside a recursive one still works.
@@ -183,6 +191,9 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>) -> (Vec
                 drive: drive_of(p, &all_drives).map(|d| d.mount.clone()),
                 modified: std::fs::metadata(p).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
                 last_used: last_used.get(&p.to_string_lossy().to_string()).copied(),
+                missing_parts: gguf::split_paths(p).iter().filter(|x| !x.exists()).count() as u32,
+                readable: info.is_some(),
+                support: None,
                 path: p.clone(),
                 file,
             }
@@ -201,6 +212,11 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>) -> (Vec
         if let Some((p, _)) = found {
             m.mmproj = Some(p.clone());
             m.kind = ModelType::Vision;
+        }
+    }
+    for m in &mut models {
+        if matches!(m.kind, ModelType::Text | ModelType::Vision | ModelType::Embedding) {
+            m.support = m.architecture.as_deref().map(|a| crate::config::archs::support(a, installed));
         }
     }
     let used: std::collections::HashSet<String> = models.iter().filter_map(|m| m.drive.clone()).collect();
@@ -270,14 +286,14 @@ mod tests {
         let lib = d.path().join("lib/owner/repo");
         std::fs::create_dir_all(&lib).unwrap();
         std::os::unix::fs::symlink(real.join("m-Q4_K_M.gguf"), lib.join("m-Q4_K_M.gguf")).unwrap();
-        let (models, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new());
+        let (models, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new(), None);
         assert_eq!(models.len(), 1);
         // Not recursive: only files directly in the folder.
-        let (none, _) = scan(&[(d.path().join("lib"), false)], &HashMap::new());
+        let (none, _) = scan(&[(d.path().join("lib"), false)], &HashMap::new(), None);
         assert!(none.is_empty());
         // A link back up the tree must not loop.
         std::os::unix::fs::symlink(d.path().join("lib"), lib.join("loop")).unwrap();
-        let (again, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new());
+        let (again, _) = scan(&[(d.path().join("lib"), true)], &HashMap::new(), None);
         assert_eq!(again.len(), 1);
     }
 
@@ -293,12 +309,28 @@ mod tests {
     }
 
     #[test]
+    fn missing_parts_and_architecture_support() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("big-00001-of-00003.gguf"), gguf::tests::llama_like()).unwrap();
+        std::fs::write(d.path().join("big-00002-of-00003.gguf"), b"x").unwrap();
+        let odd = gguf::tests::Builder::new().str("general.architecture", "future-arch-9").build();
+        std::fs::write(d.path().join("odd-Q4_K_M.gguf"), odd).unwrap();
+        std::fs::write(d.path().join("broken-Q4_K_M.gguf"), b"not a gguf at all").unwrap();
+        let (models, _) = scan(&[(d.path().to_path_buf(), false)], &HashMap::new(), Some("v1.124.2"));
+        let get = |f: &str| models.iter().find(|m| m.file.starts_with(f)).unwrap();
+        assert_eq!(get("big").missing_parts, 1);
+        assert_eq!(get("big").support, Some(crate::config::archs::Support::Yes), "llama");
+        assert_eq!(get("odd").support, Some(crate::config::archs::Support::No));
+        assert!(!get("broken").readable);
+    }
+
+    #[test]
     fn deep_folders_when_recursive() {
         let d = tempfile::tempdir().unwrap();
         let deep = d.path().join("a/b/c/d/e/f/g");
         std::fs::create_dir_all(&deep).unwrap();
         std::fs::write(deep.join("x-Q4_K_M.gguf"), gguf::tests::llama_like()).unwrap();
-        assert_eq!(scan(&[(d.path().to_path_buf(), true)], &HashMap::new()).0.len(), 1);
+        assert_eq!(scan(&[(d.path().to_path_buf(), true)], &HashMap::new(), None).0.len(), 1);
     }
 
     #[test]
@@ -322,14 +354,15 @@ mod tests {
         std::fs::write(root.path().join("big-00001-of-00002.gguf"), &head).unwrap();
         std::fs::write(root.path().join("big-00002-of-00002.gguf"), vec![0u8; 500]).unwrap();
         std::fs::write(root.path().join("notes.txt"), b"x").unwrap();
-        let (models, _) = scan(&[(root.path().to_path_buf(), true)], &HashMap::new());
+        let (models, _) = scan(&[(root.path().to_path_buf(), true)], &HashMap::new(), None);
         assert_eq!(models.len(), 3, "{:?}", models.iter().map(|m| &m.file).collect::<Vec<_>>());
         let vl = models.iter().find(|m| m.file.starts_with("Qwen3-VL")).unwrap();
         assert_eq!(vl.kind, ModelType::Vision);
         assert!(vl.mmproj.as_ref().unwrap().ends_with("mmproj-Qwen3-VL-8B-F16.gguf"));
         assert_eq!(vl.layers, Some(32));
         let big = models.iter().find(|m| m.file.starts_with("big")).unwrap();
-        assert_eq!((big.parts, big.size), (2, head.len() as u64 + 500));
+        assert_eq!((big.parts, big.size, big.missing_parts), (2, head.len() as u64 + 500, 0));
+        assert!(big.readable);
 
         assert!(is_managed(&big.path, &[root.path().to_path_buf()]));
         assert!(!is_managed(Path::new("/etc/hosts"), &[root.path().to_path_buf()]));
@@ -347,9 +380,9 @@ mod real_folder {
     #[ignore]
     fn scan_real_folder() {
         let p = std::path::PathBuf::from(std::env::var("KL_MODELS").expect("set KL_MODELS"));
-        let (models, drives) = super::scan(&[(p, true)], &Default::default());
+        let (models, drives) = super::scan(&[(p, true)], &Default::default(), Some("v1.124.2"));
         for m in &models {
-            println!("{:?} {} {:?} {} layers={:?} mmproj={:?}", m.kind, m.file, m.quant, m.size, m.layers, m.mmproj);
+            println!("{:?} {} arch={:?} support={:?} missing={} readable={}", m.kind, m.file, m.architecture, m.support, m.missing_parts, m.readable);
         }
         println!("drives: {drives:?}");
         assert!(!models.is_empty());

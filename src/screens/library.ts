@@ -1,18 +1,18 @@
 // Model library: local models as cards with filters, plus Hugging Face search and download.
 
-import { api, fmtBytes, inTauri, type Fit, type LibraryView, type LocalModel, type RepoFiles, type SearchHit } from "../api";
+import { api, fmtBytes, inTauri, type LibraryView, type LocalFit, type LocalModel, type RepoFiles, type SearchHit } from "../api";
 import { $, checkbox, fmt, h, toast, type Kid } from "../dom";
 import { getAndStart, goControl } from "../downloads";
 import { launch, stop } from "../server";
 import { S, machine, render } from "../state";
-import { famClass, fitPill, kindPill } from "./start";
+import { famClass, kindPill } from "./start";
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
 const KIND_LABEL: Record<string, string> = { Text: "Text", Vision: "Text + sees images", Image: "Image", Speech: "Speech", Embedding: "Embedding", Projector: "Vision add-on" };
 
 let view: LibraryView | null = null;
 let loading = false;
-let fits: Record<string, Fit> = {};
+let fits: Record<string, LocalFit> = {};
 let fitKey = "";
 let search: { q: string; results: SearchHit[] | null; error: string; open: string | null; files: RepoFiles | null; seq: number } = { q: "", results: null, error: "", open: null, files: null, seq: 0 };
 let searchTimer: number | undefined;
@@ -41,9 +41,32 @@ async function loadFits() {
   if (key === fitKey) return;
   fitKey = key;
   const ms = view.models;
-  const r = await api.fits(ms.map((m) => [m.size + (m.mmproj ? 0.9 * 1024 ** 3 : 0), Math.min(m.contextLength ?? 16384, 16384)]), machine());
+  const sizeOf = (p: string | null) => (p ? view!.models.find((x) => x.path === p)?.size ?? 0.9 * 1024 ** 3 : null);
+  // KoboldCpp's own layer estimate with the GGUF layout, at the context the launcher starts with.
+  const r = await api.fitLocal(ms.map((m) => ({ size: m.size, layers: m.layers, headCountKv: m.headCountKv, kvLen: m.kvLen, mmproj: sizeOf(m.mmproj) })), machine(16384));
   fits = Object.fromEntries(ms.map((m, i) => [m.path, r[i]]));
   renderLibGrid();
+}
+
+/** Can this model run here? Checked in order: readable file, all parts, architecture, memory. */
+interface RunStatus { level: "ok" | "warn" | "bad"; label: string; detail: string; start: "yes" | "try" | "no" }
+
+function runStatus(m: LocalModel, f: LocalFit | undefined): RunStatus {
+  const ver = S.binary?.installed?.version ?? "this KoboldCpp";
+  if (!m.readable) return { level: "bad", label: "Damaged file", detail: "The file can't be read as a GGUF model. Download it again.", start: "no" };
+  if (m.missingParts > 0) return { level: "bad", label: "Incomplete", detail: `${m.missingParts} of ${m.parts} parts ${m.missingParts === 1 ? "is" : "are"} missing in this folder.`, start: "no" };
+  if (m.support === "no") return { level: "bad", label: "Not supported", detail: `KoboldCpp ${ver} doesn't know the “${m.architecture}” architecture. A newer KoboldCpp may.`, start: "no" };
+  if (!f) return { level: "warn", label: "Checking…", detail: "", start: "yes" };
+  if (f.fit === "none") return { level: "bad", label: "Too big", detail: "Needs more memory than this computer has. It may not load or run very slowly.", start: "try" };
+  const unknown = m.support === "unknown";
+  const arch = unknown ? ` KoboldCpp ${ver} may not know the “${m.architecture}” architecture.` : "";
+  if (f.fit === "partial") {
+    const of = m.layers ? ` (${f.gpuLayers} of ${m.layers + 1} layers on the GPU)` : "";
+    return { level: "warn", label: "Partly on CPU", detail: `Runs, but slower: part of it stays on the CPU${of}.${arch}`, start: unknown ? "try" : "yes" };
+  }
+  if (f.fit === "cpu") return { level: "warn", label: "CPU only", detail: `Runs on the CPU, no GPU selected. Slower.${arch}`, start: unknown ? "try" : "yes" };
+  if (unknown) return { level: "warn", label: "Maybe", detail: `Fits in memory.${arch}`, start: "try" };
+  return { level: "ok", label: "Runs here", detail: S.hw?.unifiedMemory ? "Fits in memory, fully on the GPU." : "Fits completely on the GPU.", start: "yes" };
 }
 
 const family = (m: LocalModel) => (m.architecture ?? "other").replace(/\d.*$/, "") || "other";
@@ -169,6 +192,10 @@ export function renderLibrary() {
 
   if (view && L.tab === "local") {
     const models = view.models.filter((m) => m.kind !== "Projector");
+    const runnable = models.filter((m) => runStatus(m, fits[m.path]).start === "yes").length;
+    side.append(h("label", { class: "chk", for: "f-runs", style: "font-weight:600" },
+      "Only models that run here", h("span", { class: "n" }, runnable),
+      checkbox("f-runs", L.runsOnly, (v) => { L.runsOnly = v; renderLibGrid(); })));
     const facet = (title: string, key: "types" | "fams", items: [string, string, number, Kid?][]) => {
       const box = h("div", { style: "display:grid;grid-template-columns:minmax(0,1fr);gap:2px" }, h("h3", { style: "margin-bottom:6px" }, title));
       for (const [val, label, n, badge] of items) {
@@ -335,12 +362,14 @@ function renderLibGrid() {
     (!L.types.size || L.types.has(m.kind)) &&
     (!L.fams.size || L.fams.has(family(m))) &&
     (!L.drives.size || (m.drive && L.drives.has(m.drive))) &&
-    (!qq || (m.name + m.file).toLowerCase().includes(qq)));
+    (!qq || (m.name + m.file).toLowerCase().includes(qq)) &&
+    (!L.runsOnly || runStatus(m, fits[m.path]).start === "yes"));
   const total = items.reduce((a, m) => a + m.size, 0);
   const grid = h("div", { class: "grid" });
   const kv = (k: string, v: Kid, style?: string) => h("div", { class: "kv" }, h("span", {}, k), h("span", { style }, v));
 
   for (const m of items) {
+    const st = runStatus(m, fits[m.path]);
     const acts = h("div", { class: "acts" });
     const running = S.running === m.name && S.server.state !== "stopped";
     if (L.confirm === m.path)
@@ -349,12 +378,16 @@ function renderLibGrid() {
         h("button", { class: "ghost", onclick: () => { L.confirm = null; renderLibGrid(); } }, "Keep")));
     else
       acts.append(
-        h("button", { class: running ? "" : "go-start", onclick: () => (running ? stop() : startModel(m)) }, running ? "Stop" : "Start"),
+        running
+          ? h("button", { onclick: () => stop() }, "Stop")
+          : st.start === "yes" ? h("button", { class: "go-start", onclick: () => startModel(m) }, "Start")
+          : st.start === "try" ? h("button", { onclick: () => startModel(m), title: st.detail }, "Try anyway")
+          : h("button", { disabled: true, title: st.detail }, "Start"),
         h("button", { onclick: () => moveModel(m) }, "Move…"),
         h("button", { class: "ghost", onclick: () => { L.confirm = m.path; renderLibGrid(); } }, "Remove"));
-    const f = fits[m.path];
-    grid.append(h("article", { class: "card" },
-      h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)), ...(f ? fitPill(f) : [])),
+    grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
+      h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),
+        h("span", { class: `pill ${st.level === "ok" ? "p-ok" : st.level === "warn" ? "p-warn" : "p-bad"}`, title: st.detail }, st.label)),
       h("h4", {}, m.name),
       h("div", { class: "tags" }, [m.sizeLabel, m.quant, m.architecture, m.parts > 1 ? `${m.parts} parts` : null].filter(Boolean).join(" · ")),
       kv("Type", KIND_LABEL[m.kind]), kv("Size", fmtBytes(m.size)),
@@ -362,6 +395,7 @@ function renderLibGrid() {
       kv("Layers", m.layers ?? "–"),
       kv("Drive", m.drive === "/" ? "System disk" : m.drive ?? "–"),
       kv("Last used", ago(m.lastUsed)),
+      st.detail ? h("div", { class: `runline ${st.level}` }, st.detail) : null,
       acts));
   }
   const empty = view.models.length === 0

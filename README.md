@@ -71,10 +71,11 @@ The last one downloads the real KoboldCpp release and a 0.4 GB model, starts it,
 stops it. `KL_CA_BUNDLE=/path/to/bundle.pem` makes all downloads trust only that certificate bundle
 (for corporate proxies or sandboxes without keychain access).
 
-When KoboldCpp adds launch options, refresh the option table from its source:
+When KoboldCpp adds launch options or model architectures, refresh the tables from its source:
 
 ```bash
 python3 -I tools/extract_args.py path/to/koboldcpp.py v1.xxx > src-tauri/src/config/args.json
+python3 -I tools/extract_archs.py path/to/src/llama-arch.cpp v1.xxx > src-tauri/src/config/archs.json
 ```
 
 License: AGPL-3.0, same as KoboldCpp.

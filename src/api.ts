@@ -68,7 +68,9 @@ export interface LocalModel {
   path: string; file: string; name: string; kind: ModelKind; architecture: string | null; quant: string | null; sizeLabel: string | null;
   size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
   mmproj: string | null; drive: string | null; modified: number | null; lastUsed: number | null;
+  missingParts: number; readable: boolean; support: "yes" | "no" | "unknown" | null;
 }
+export interface LocalFit { fit: Fit; gpuLayers: number }
 export interface Drive { mount: string; name: string; total: number; free: number; removable: boolean }
 export interface LibraryFolder { path: string; recursive: boolean }
 export interface LibraryView { models: LocalModel[]; drives: Drive[]; folders: LibraryFolder[]; modelsDir: string }
@@ -185,6 +187,8 @@ export const api = {
   cancelDownload: (id: string) => call<void>("cancel_download", { id }, () => void mockCancelled.add(id)),
   exportSources: (path: string) => call<void>("export_sources", { path }),
 
+  fitLocal: (items: { size: number; layers: number | null; headCountKv: number | null; kvLen: number | null; mmproj: number | null }[], machine: Machine) =>
+    call<LocalFit[]>("fit_local", { items, machine }, () => import("./mock").then((m) => items.map((i) => ({ fit: m.mockFit(i.size + (i.mmproj ?? 0), machine.context, machine), gpuLayers: (i.layers ?? 0) + 1 })))),
   library: () => call<LibraryView>("library_scan", {}, () => import("./mock").then((m) => m.mockLibrary())),
   addFolder: (path: string, recursive = true) => call<Settings>("add_library_folder", { path, recursive }, () => (mockSettings = { ...mockSettings, libraryFolders: [...mockSettings.libraryFolders, { path, recursive }] })),
   previewFolder: (path: string, recursive: boolean) =>
