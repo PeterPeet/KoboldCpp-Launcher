@@ -215,7 +215,7 @@ export function renderLibrary() {
     q.addEventListener("input", () => { L.q = q.value; renderLibGrid(); });
     side.append(q);
   } else {
-    side.append(h("p", { class: "note", style: "margin:0" }, "Search all GGUF models on Hugging Face. Sizes shown are for Q4_K_M, the usual choice."));
+    side.append(h("p", { class: "note", style: "margin:0" }, "Search all GGUF models on Hugging Face. Each row shows the best quantization that fits this PC."));
   }
 
   if (view && L.tab === "local") {

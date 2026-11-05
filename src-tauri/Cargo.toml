@@ -37,6 +37,8 @@ trash = "5.2.9"
 
 [dev-dependencies]
 tempfile = "3"
+# Mock app for tests that call commands (tests/screenshot_data.rs).
+tauri = { version = "2", features = ["test"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

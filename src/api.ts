@@ -94,8 +94,29 @@ export interface PresetInfo { name: string; path: string; modified: number | nul
 
 /* ---------- plumbing ---------- */
 
+/** README screenshots: with `?fixture` the browser preview answers from data recorded on a real
+ *  computer (`src-tauri/tests/screenshot_data.rs`) instead of its sample data. */
+export const fixtureMode = !inTauri && typeof location !== "undefined" && new URLSearchParams(location.search).has("fixture");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Rec = Record<string, any>;
+let fixture: Promise<Rec> | null = null;
+function fromFixture(f: Rec, cmd: string, args: Record<string, unknown>): unknown {
+  switch (cmd) {
+    case "popular_models": return f.popular_models?.[(args.family as string | null) ?? ""];
+    case "search_models": return f.search_models?.[String(args.query).trim().toLowerCase()];
+    case "fits": return (args.items as [number, number][]).map(([s, c]) => f.fits?.[`${s}:${c}`]);
+    case "fit_local": return (args.items as { path: string }[]).map((i) => f.fit_local?.[i.path]);
+    default: return f[cmd];
+  }
+}
+
 async function call<T>(cmd: string, args: Record<string, unknown> = {}, mock?: () => T | Promise<T>): Promise<T> {
   if (!inTauri) {
+    if (fixtureMode) {
+      const f = await (fixture ??= fetch("/shots-data/fixture.json", { cache: "no-store" }).then((r) => r.json()));
+      const v = fromFixture(f, cmd, args);
+      if (v !== undefined && !(Array.isArray(v) && v.includes(undefined))) return v as T;
+    }
     if (mock) return mock();
     throw new Error("Only available in the desktop app");
   }

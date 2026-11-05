@@ -11,7 +11,7 @@ applyTheme();
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { $, toast } from "./dom";
 import { openSources } from "./dialogs/sources";
-import { api, inTauri } from "./api";
+import { api, fixtureMode, inTauri } from "./api";
 import { drawUpdBtn, openUpdate, refreshBinary, refreshSelf } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
 import { initDownloads } from "./downloads";
@@ -55,7 +55,10 @@ document.addEventListener("keydown", (e) => {
 
 $("#openSources")!.addEventListener("click", openSources);
 $("#updBtn")!.addEventListener("click", openUpdate);
-if (!inTauri) $("#previewPill")!.hidden = false;
+if (!inTauri && !fixtureMode) $("#previewPill")!.hidden = false;
+// Screenshots: `?fixture&theme=lite` shows the KoboldAI Lite colors without storing the choice.
+const shotTheme = fixtureMode ? new URLSearchParams(location.search).get("theme") : null;
+if (shotTheme === "lite" || shotTheme === "light") applyTheme(shotTheme);
 drawUpdBtn();
 initServer();
 initDownloads();
