@@ -553,7 +553,11 @@ fn quant_at(b: &[u8]) -> Option<usize> {
             return Some(fixed.len());
         }
     }
-    let (prefix, rest) = if let Some(r) = s.strip_prefix("IQ") { (2, r) } else if let Some(r) = s.strip_prefix("TQ") { (2, r) } else if let Some(r) = s.strip_prefix('Q') { (1, r) } else { return None };
+    let (prefix, rest) = match (s.strip_prefix("IQ").or_else(|| s.strip_prefix("TQ")), s.strip_prefix('Q')) {
+        (Some(r), _) => (2, r),
+        (None, Some(r)) => (1, r),
+        (None, None) => return None,
+    };
     let rb = rest.as_bytes();
     if rb.len() < 3 || !rb[0].is_ascii_digit() || rb[1] != b'_' {
         return None;

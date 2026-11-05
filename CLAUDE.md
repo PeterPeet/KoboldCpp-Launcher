@@ -25,10 +25,12 @@ binary; it does **not** reimplement the server. Lite stays unchanged.
 - Upstream reference for options and formats is **LostRuins' `koboldcpp.py`** (the binary we run), not Esobold.
 
 ## Working notes
-- In the Claude sandbox: run cargo with `CARGO_HOME=$TMPDIR/cargo-home`; network tests need
+- In the Claude sandbox: run cargo with `CARGO_HOME=$TMPDIR/cargo-home CARGO_TARGET_DIR=$TMPDIR/kl-target`
+  (own build folder, so Peter's `tauri dev` keeps its cache); network tests need
   `KL_CA_BUNDLE=/etc/ssl/cert.pem`; the real KoboldCpp binary can't start inside the sandbox
   (PyInstaller semaphores), so the e2e test must run in a normal terminal.
-- UI check without Tauri: `.claude/launch.json` (Vite on 1420) + browser pane.
+- UI check without Tauri: `.claude/launch.json` + browser pane; use `vite-alt` (port 1430) while
+  Peter's `tauri dev` holds 1420. `ps`/`lsof` are blocked in the sandbox (process tests skip).
 
 ## Rules
 - License: AGPL-3.0 (`LICENSE`), same as KoboldCpp. Reimplement ideas, don't copy proprietary code.

@@ -1,3 +1,4 @@
+pub mod applog;
 pub mod binary;
 pub mod commands;
 pub mod config;
@@ -20,7 +21,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
-            app.manage(AppState::new(dir));
+            let state = AppState::new(dir);
+            // A KoboldCpp left from a session that was killed instead of closed.
+            let bin = state.dirs.bin();
+            std::thread::spawn(move || {
+                let n = server::kill_orphans(&bin);
+                if n > 0 {
+                    applog!("ended {n} leftover KoboldCpp process(es)");
+                }
+            });
+            app.manage(state);
             app.manage(commands::Downloads::default());
             Ok(())
         })
@@ -30,6 +40,7 @@ pub fn run() {
             app_paths,
             hardware_info,
             read_gguf,
+            read_logs,
             pick_quant,
             command_line,
             binary_status,
@@ -67,9 +78,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Never leave KoboldCpp running in the background when the launcher quits.
-            if let tauri::RunEvent::Exit = event {
-                app.state::<AppState>().server.stop(std::time::Duration::from_secs(5));
+            // Never leave KoboldCpp running when the launcher closes (window closed, Cmd+Q, quit).
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                let state = app.state::<AppState>();
+                if state.server.is_active() {
+                    applog!("launcher closing: stopping KoboldCpp");
+                }
+                state.server.stop(std::time::Duration::from_secs(5));
             }
         });
 }

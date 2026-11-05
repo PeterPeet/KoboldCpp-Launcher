@@ -28,7 +28,8 @@ export interface Settings {
   binary: InstalledBinary | null; checkUpdatesOnStart: boolean; includePrereleases: boolean;
   modelsDir: string | null; libraryFolders: string[]; sources: Source[];
 }
-export interface Paths { data: string; models: string; presets: string }
+export interface Paths { data: string; models: string; presets: string; logs: string }
+export interface Logs { dir: string; koboldcpp: string; launcher: string }
 export type ServerStatus =
   | { state: "stopped" }
   | { state: "starting"; port: number }
@@ -128,7 +129,8 @@ export const api = {
   hardware: (refresh = false) => call<HardwareInfo>("hardware_info", { refresh }, () => mockHardware),
   settings: () => call<Settings>("get_settings", {}, () => mockSettings),
   saveSettings: (patch: SettingsPatch) => call<Settings>("save_settings", { patch }, () => (mockSettings = { ...mockSettings, ...patch })),
-  paths: () => call<Paths>("app_paths", {}, () => ({ data: "~/KoboldCpp Launcher", models: "~/KoboldCpp Launcher/models", presets: "~/KoboldCpp Launcher/presets" })),
+  paths: () => call<Paths>("app_paths", {}, () => ({ data: "~/KoboldCpp Launcher", models: "~/KoboldCpp Launcher/models", presets: "~/KoboldCpp Launcher/presets", logs: "~/KoboldCpp Launcher/logs" })),
+  readLogs: () => call<Logs>("read_logs", {}, () => ({ dir: "~/KoboldCpp Launcher/logs", koboldcpp: "***\nWelcome to KoboldCpp - Version 1.124.2\nLoad Text Model OK: True\nPlease connect to custom endpoint at http://localhost:5001\n", launcher: "2026-11-05 03:47:01 UTC  launcher 0.1.0 started\n2026-11-05 03:47:20 UTC  start koboldcpp (model Qwen3-1.7B-Q8_0.gguf, port 5001)\n2026-11-05 03:47:31 UTC  KoboldCpp: Running { port: 5001 }\n" })),
   commandLine: (config: Kcpps) => call<string>("command_line", { config }),
 
   binaryStatus: () => call<BinaryStatus>("binary_status", {}, () => ({ installed: mockSettings.binary, present: true, asset: "koboldcpp.exe" })),

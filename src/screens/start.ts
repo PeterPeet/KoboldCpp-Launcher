@@ -56,12 +56,13 @@ async function loadFamilies() {
 }
 
 async function loadPopular() {
-  const key = JSON.stringify([S.family, S.sort, S.official, S.uncensored, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
+  const key = JSON.stringify([S.family, S.sort, machine(), S.sources.map((s) => [s.id, s.on, s.comps])]);
   if (key === S.popularKey) return;
   S.popularKey = key;
   S.popular = null;
   try {
-    S.popular = await api.popular({ officialOnly: S.official, showUncensored: S.uncensored, sort: S.sort }, machine(), S.family);
+    // What appears is decided by the model sources (their Official / Finetunes / Uncensored boxes).
+    S.popular = await api.popular({ officialOnly: false, showUncensored: true, sort: S.sort }, machine(), S.family);
     S.popularError = "";
   } catch (e) {
     S.popularError = String(e);
@@ -156,21 +157,18 @@ function templatesSection() {
 function popularSection() {
   loadPopular();
   if (!families.length) loadFamilies();
-  const seg = h("div", { class: "seg", role: "group", "aria-label": "Which models" },
-    ...([["Original models", true], ["With finetunes", false]] as const).map(([l, v]) =>
-      h("button", { "aria-pressed": String(S.official === v), onclick: () => { S.official = v; render(); } }, l)));
-  const famRow = h("div", { class: "famrow", role: "tablist", "aria-label": "Model family" },
-    ...([[null, "Top", ""], ...families] as [string | null, string, string][]).map(([id, label, maker]) =>
-      h("button", { role: "tab", "aria-selected": String(S.family === id), title: maker ? `Models from hf.co/${maker} and quants of them` : "The best model of each maker", onclick: () => { S.family = id; render(); } }, label)));
   const sortSel = h("select", { id: "sortSel", "aria-label": "Order" }, ...SORTS.map(([v, l]) => h("option", { value: v, selected: S.sort === v }, l))) as HTMLSelectElement;
   sortSel.addEventListener("change", () => { S.sort = sortSel.value as typeof S.sort; render(); });
+  const famRow = h("div", { class: "famrow", role: "tablist", "aria-label": "Model family" },
+    ...([[null, "Top", ""], ...families] as [string | null, string, string][]).map(([id, label, maker]) =>
+      h("button", { role: "tab", "aria-selected": String(S.family === id), title: maker ? `Models from hf.co/${maker} and quants of them` : "The best model of each maker", onclick: () => { S.family = id; render(); } }, label)),
+    h("label", { class: "sortlbl" }, "Order", sortSel));
   const head = h("div", { class: "sec-head" },
     h("div", {},
       h("h2", {}, "Choose from popular models yourself"),
       h("p", {}, S.family === null
         ? `Each maker's ${SORTS.find((s) => s[0] === S.sort)![1].toLowerCase()} model that fits this PC, from its own Hugging Face account where it has one. Pick a family to see more.`
-        : "From your sources, in the order you chose. The best quality that fits is picked for you.")),
-    h("div", { class: "controls" }, h("label", { class: "sortlbl" }, "Order", sortSel), seg, toggle("unc", S.uncensored, (v) => { S.uncensored = v; render(); }, "Show uncensored finetunes")));
+        : "From your model sources, in the order you chose. The best quality that fits is picked for you.")));
   const out: HTMLElement[] = [head, famRow];
   const pop = S.popular;
   if (!pop) {
@@ -178,7 +176,7 @@ function popularSection() {
     return out;
   }
   const list = h("div", { class: "list" });
-  if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your sources." : "Nothing matches. Turn on more sources or include finetunes."));
+  if (!pop.items.length) list.append(h("div", { class: "empty" }, S.family ? "Nothing from this family fits this PC with your model sources." : "Nothing fits. Check that the makers are on in Model Sources."));
   for (const m of pop.items) {
     const key = "m:" + m.id;
     const ctl = goControl(key, m.name, () => startPopular(m), { installed: m.downloaded });
@@ -199,15 +197,15 @@ function popularSection() {
   }
   out.push(list);
   if (pop.errors.length) out.push(h("p", { class: "note", style: "margin:-10px 0 0" }, `Not reachable: ${pop.errors.join("; ")}`));
-  if (!S.official && !S.sources.some((s) => s.on && s.comps && (s.comps.finetune || s.comps.unc)))
+  if (S.family !== null && !S.sources.some((s) => s.on && s.comps && (s.comps.finetune || s.comps.unc)))
     out.push(h("p", { class: "note", style: "margin:-10px 0 0" },
-      "Your sources only allow original models, so finetunes don't appear. ",
-      h("button", { class: "linkbtn", onclick: openSources }, "Add bartowski or TheDrummer"), " to see finetunes."));
+      "Finetunes are off in all your model sources. ",
+      h("button", { class: "linkbtn", onclick: openSources }, "Turn on bartowski or TheDrummer"), " to see them."));
   const hidden = [pop.tooBig ? `${pop.tooBig} too big for this PC, hidden` : "", pop.dupes ? `${pop.dupes} duplicate upload${pop.dupes > 1 ? "s" : ""} merged` : ""].filter(Boolean).join(" · ");
   out.push(h("div", { class: "foot" },
     h("span", {}, hidden || "Nothing hidden"),
     h("span", {},
-      h("button", { class: "linkbtn", onclick: openSources }, "Manage sources"), " · ",
+      h("button", { class: "linkbtn", onclick: openSources }, "Model sources"), " · ",
       h("a", { href: "#library", style: "color:var(--accent-text)" }, "Model library"), " · ",
       h("a", { href: "#advanced", style: "color:var(--accent-text)" }, "Advanced setup"))));
   return out;

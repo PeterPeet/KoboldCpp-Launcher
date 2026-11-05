@@ -122,9 +122,11 @@ h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-3
 .status.busy .dot{background:var(--accent)} .status.busy{color:var(--accent-text)}
 .status.bad .dot{background:var(--bad)} .status.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,transparent)}
 pre.log{margin:0;max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.45 var(--f-mono);color:var(--fg-2);white-space:pre-wrap;overflow-wrap:anywhere}
+pre.log.big{max-height:none;height:calc(100vh - 270px);min-height:240px}
 pre.relnotes{margin:6px 0 0;max-height:220px;overflow:auto;font:12.5px/1.5 var(--f-ui);white-space:pre-wrap;color:var(--fg-2)}
-.famrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:-8px}
-.famrow button{border:1px solid var(--line-2);background:var(--win);border-radius:20px;padding:5px 14px;font-size:13.5px;color:var(--fg-2)}
+.famrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:-8px;align-items:center}
+.famrow .sortlbl{margin-left:8px}
+.pillbtn,.famrow button{border:1px solid var(--line-2);background:var(--win);border-radius:20px;padding:5px 14px;font-size:13.5px;color:var(--fg-2)}
 .famrow button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .p-fam{background:var(--panel);color:var(--fg);border:1px solid var(--line-2)}
 .typ{font-family:var(--f-mono);font-size:12px;color:var(--fg-2);white-space:nowrap}

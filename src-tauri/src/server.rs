@@ -54,11 +54,16 @@ struct Inner {
 #[derive(Clone)]
 pub struct ServerManager {
     inner: Arc<Mutex<Inner>>,
+    /// Where KoboldCpp's output is written; default: next to the config (`<config>.log`).
+    log_path: Arc<Mutex<Option<std::path::PathBuf>>>,
 }
 
 impl Default for ServerManager {
     fn default() -> Self {
-        Self { inner: Arc::new(Mutex::new(Inner { child: None, status: ServerStatus::Stopped, logs: VecDeque::new(), run: 0, stop_requested: false })) }
+        Self {
+            inner: Arc::new(Mutex::new(Inner { child: None, status: ServerStatus::Stopped, logs: VecDeque::new(), run: 0, stop_requested: false })),
+            log_path: Arc::new(Mutex::new(None)),
+        }
     }
 }
 
@@ -115,6 +120,41 @@ pub fn reclaim_port(port: u16, bin_dir: &Path) -> bool {
     }
 }
 
+/// End every KoboldCpp started from `bin_dir` (left over from an earlier launcher session that
+/// was killed instead of closed). Programs from anywhere else are never touched.
+pub fn kill_orphans(bin_dir: &Path) -> usize {
+    #[cfg(unix)]
+    {
+        let bin = bin_dir.to_string_lossy().into_owned();
+        let me = std::process::id() as i32;
+        let Ok(out) = Command::new("ps").args(["-axo", "pid=,command="]).output() else { return 0 };
+        let pids: Vec<i32> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.contains(&bin))
+            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+            .filter(|&p| p > 1 && p != me)
+            .collect();
+        for &p in &pids {
+            unsafe { libc::kill(p, libc::SIGTERM) };
+        }
+        let end = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < end && pids.iter().any(|&p| unsafe { libc::kill(p, 0) } == 0) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        for &p in &pids {
+            if unsafe { libc::kill(p, 0) } == 0 {
+                unsafe { libc::kill(p, libc::SIGKILL) };
+            }
+        }
+        pids.len()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = bin_dir;
+        0
+    }
+}
+
 /// Progress lines KoboldCpp rewrites in place; only the latest is kept.
 fn is_progress(line: &str) -> bool {
     line.starts_with("Generating (") || line.starts_with("Processing Prompt") || line.starts_with("Processing (")
@@ -134,6 +174,10 @@ pub fn local_get(port: u16, path: &str, timeout: Duration) -> Option<String> {
 }
 
 impl ServerManager {
+    pub fn set_log_path(&self, path: std::path::PathBuf) {
+        *self.log_path.lock().unwrap() = Some(path);
+    }
+
     pub fn status(&self) -> ServerStatus {
         self.inner.lock().unwrap().status.clone()
     }
@@ -185,7 +229,8 @@ impl ServerManager {
         let mut child = cmd.spawn().map_err(ServerError::Spawn)?;
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         // Everything KoboldCpp prints also goes to <config>.log (e.g. runs/last-run.log).
-        let log_file = std::fs::File::create(config.with_extension("log")).ok().map(|f| Arc::new(Mutex::new(f)));
+        let log_path = self.log_path.lock().unwrap().clone().unwrap_or_else(|| config.with_extension("log"));
+        let log_file = std::fs::File::create(log_path).ok().map(|f| Arc::new(Mutex::new(f)));
         let run = {
             let mut g = self.inner.lock().unwrap();
             g.run += 1;
@@ -417,6 +462,28 @@ mod tests {
         assert_eq!(wait_for(&m, |s| matches!(s, ServerStatus::Running { .. })), ServerStatus::Running { port }, "{:?}", m.logs(5));
         m.stop(Duration::from_secs(5));
         assert!(port_free(port));
+    }
+
+    #[test]
+    fn leftovers_from_our_bin_folder_are_ended() {
+        if !Command::new("ps").args(["-axo", "pid="]).output().is_ok_and(|o| o.status.success()) {
+            eprintln!("skipped: ps is not available here (sandbox)");
+            return;
+        }
+        let bin = tempfile::tempdir().unwrap();
+        let script = bin.path().join("koboldcpp-test");
+        std::fs::write(&script, "#!/bin/sh\nsleep 30\n").unwrap();
+        crate::binary::make_executable(&script).unwrap();
+        let mut child = Command::new(&script).spawn().unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let other = tempfile::tempdir().unwrap();
+        assert_eq!(kill_orphans(other.path()), 0, "nothing from another folder");
+        assert!(kill_orphans(bin.path()) >= 1);
+        let gone = (0..30).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            matches!(child.try_wait(), Ok(Some(_)))
+        });
+        assert!(gone, "leftover process was ended");
     }
 
     #[test]

@@ -4,6 +4,7 @@
 import { api, fmtBytes, inTauri, type Gpu, type Kcpps, type LocalModel, type PresetInfo } from "../api";
 import { $, h, select, toggle, toast, type Kid } from "../dom";
 import { isActive, launch, stop } from "../server";
+import { reveal } from "../dialogs/update";
 import { S, render } from "../state";
 
 const ICONS: Record<string, string> = {
@@ -14,10 +15,11 @@ const ICONS: Record<string, string> = {
   voice: "M12 3a3 3 0 013 3v6a3 3 0 01-6 0V6a3 3 0 013-3z M5 11a7 7 0 0014 0 M12 18v3",
   network: "M12 3v6 M5 15v-3h14v3 M3 15h4v6H3z M10 15h4v6h-4z M17 15h4v6h-4z",
   presets: "M6 3h12v18l-6-4-6 4z",
+  logs: "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
 };
 const PAGES: [string, string][] = [
   ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"], ["images", "Images"],
-  ["voice", "Voice and audio"], ["network", "Network"], ["presets", "Presets"],
+  ["voice", "Voice and audio"], ["network", "Network"], ["presets", "Presets"], ["logs", "Logs"],
 ];
 
 /* ---------- config state ---------- */
@@ -318,6 +320,53 @@ function presetsPage(pane: HTMLElement) {
     h("button", { onclick: importConfig }, "Import .kcpps or .kcppt…")));
 }
 
+/* ---------- logs ---------- */
+
+let logs: { dir: string; koboldcpp: string; launcher: string } | null = null;
+let logTab: "koboldcpp" | "launcher" = "koboldcpp";
+let logTimer: number | undefined;
+
+async function loadLogs() {
+  try {
+    logs = await api.readLogs();
+  } catch (e) {
+    logs = { dir: "", koboldcpp: String(e), launcher: "" };
+  }
+  const pre = $("#logText");
+  if (pre && logs) {
+    const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    pre.textContent = logs[logTab] || "Nothing logged yet.";
+    if (atEnd) pre.scrollTop = pre.scrollHeight;
+  } else {
+    render();
+  }
+}
+
+function logsPage(pane: HTMLElement) {
+  if (!logs) loadLogs();
+  // Refresh while this page is open.
+  clearInterval(logTimer);
+  logTimer = window.setInterval(() => {
+    if (S.adv.page !== "logs" || location.hash !== "#advanced") return clearInterval(logTimer);
+    loadLogs();
+  }, 2000);
+  const tabs = h("div", { class: "tabs", role: "tablist" },
+    ...([["koboldcpp", "KoboldCpp"], ["launcher", "Launcher"]] as const).map(([k, l]) =>
+      h("button", { role: "tab", "aria-selected": String(logTab === k), onclick: () => { logTab = k; render(); } }, l)));
+  const pre = h("pre", { class: "log big", id: "logText" }, logs ? logs[logTab] || "Nothing logged yet." : "Loading…");
+  setTimeout(() => (pre.scrollTop = pre.scrollHeight));
+  pane.append(title("Logs"),
+    h("p", { class: "note", style: "margin:0" }, logTab === "koboldcpp"
+      ? "Everything KoboldCpp printed during the last start (koboldcpp.log)."
+      : "What the launcher did: starts, stops, downloads, updates and errors (launcher.log)."),
+    h("div", { style: "display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap" },
+      tabs,
+      h("div", { style: "display:flex;gap:6px" },
+        h("button", { class: "ghost", onclick: loadLogs }, "Refresh"),
+        h("button", { onclick: async () => reveal(`${(logs?.dir || (await api.paths()).logs)}/${logTab}.log`) }, "Open folder"))),
+    pre);
+}
+
 /* ---------- screen ---------- */
 
 export function renderAdvanced() {
@@ -330,7 +379,9 @@ export function renderAdvanced() {
   const pane = h("section", { class: "pane" });
   root.append(pane);
 
-  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
+  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
+  // The log page is a viewer: no command line or start buttons below it.
+  if (A.page === "logs") return root;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(cli); toast("Command copied"); }

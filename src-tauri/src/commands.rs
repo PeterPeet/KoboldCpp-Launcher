@@ -45,10 +45,14 @@ impl AppState {
             settings.binary = Some(found);
             let _ = settings.save(&dirs.settings_file());
         }
+        crate::applog::init(&dirs.logs().join("launcher.log"));
+        crate::applog!("launcher {} started, data folder {}", env!("CARGO_PKG_VERSION"), dirs.root.display());
+        let server = ServerManager::default();
+        server.set_log_path(dirs.logs().join("koboldcpp.log"));
         Self {
             dirs,
             settings: Mutex::new(settings),
-            server: ServerManager::default(),
+            server,
             http: download::client(),
             hardware: Mutex::new(None),
             releases: Mutex::new(None),
@@ -121,11 +125,12 @@ pub struct Paths {
     pub data: PathBuf,
     pub models: PathBuf,
     pub presets: PathBuf,
+    pub logs: PathBuf,
 }
 
 #[tauri::command]
 pub fn app_paths(state: State<'_, AppState>) -> Paths {
-    Paths { data: state.dirs.root.clone(), models: state.settings().models_dir(&state.dirs), presets: state.dirs.presets() }
+    Paths { data: state.dirs.root.clone(), models: state.settings().models_dir(&state.dirs), presets: state.dirs.presets(), logs: state.dirs.logs() }
 }
 
 #[tauri::command]
@@ -223,11 +228,16 @@ pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Opt
     let cancel = Cancel::default();
     *state.binary_cancel.lock().map_err(err)? = Some(cancel.clone());
     let app2 = app.clone();
+    crate::applog!("installing KoboldCpp {} ({asset})", release.tag_name);
     let installed = binary::install(&state.http, &release, asset, &state.dirs.bin(), &cancel, move |p| {
         let _ = app2.emit("binary-progress", p);
     })
     .await
-    .map_err(err)?;
+    .map_err(|e| {
+        crate::applog!("install failed: {e}");
+        err(e)
+    })?;
+    crate::applog!("installed {}", installed.path.display());
     *state.binary_cancel.lock().map_err(err)? = None;
 
     let was_running = state.server.is_active();
@@ -288,6 +298,7 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     }
     let path = state.dirs.runs().join("last-run.kcpps");
     cfg.save(&path).map_err(err)?;
+    crate::applog!("start {} with {} (model {}, port {port})", bin.path.display(), path.display(), cfg.model().unwrap_or_else(|| "-".into()));
     if !crate::server::port_free(port) {
         crate::server::reclaim_port(port, &state.dirs.bin());
     }
@@ -295,9 +306,15 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     state
         .server
         .start(&bin.path, &path, &models, port, Arc::new(move |ev| {
+            if let crate::server::ServerEvent::Status { status } = &ev {
+                crate::applog!("KoboldCpp: {status:?}");
+            }
             let _ = app2.emit("server", ev);
         }))
-        .map_err(err)?;
+        .map_err(|e| {
+            crate::applog!("start failed: {e}");
+            err(e)
+        })?;
     *state.last_run.lock().map_err(err)? = Some(cfg);
     Ok(port)
 }
@@ -309,6 +326,7 @@ pub fn start_server(app: AppHandle, state: State<'_, AppState>, config: Map<Stri
 
 #[tauri::command]
 pub async fn stop_server(state: State<'_, AppState>) -> CmdResult<()> {
+    crate::applog!("stop requested");
     let server = state.server.clone();
     tauri::async_runtime::spawn_blocking(move || server.stop(Duration::from_secs(8))).await.map_err(err)
 }
@@ -591,6 +609,7 @@ pub async fn download_files(app: AppHandle, state: State<'_, AppState>, download
         }
     }
     let total: Option<u64> = jobs.iter().map(|j| j.2).sum();
+    crate::applog!("download {id}: {} file(s), {} bytes", jobs.len(), total.map_or("unknown".into(), |t| t.to_string()));
     let mut base = 0u64;
     let mut out = Vec::new();
     let result: CmdResult<()> = async {
@@ -613,6 +632,10 @@ pub async fn download_files(app: AppHandle, state: State<'_, AppState>, download
     }
     .await;
     downloads.0.lock().map_err(err)?.remove(&id);
+    match &result {
+        Ok(_) => crate::applog!("download {id}: done"),
+        Err(e) => crate::applog!("download {id}: {e}"),
+    }
     result.map(|_| out)
 }
 
@@ -772,4 +795,25 @@ pub fn load_config(path: PathBuf) -> CmdResult<Map<String, Value>> {
 #[tauri::command]
 pub fn last_config(state: State<'_, AppState>) -> Option<Map<String, Value>> {
     Kcpps::load(&state.dirs.runs().join("last-run.kcpps")).ok().map(|k| k.map().clone())
+}
+
+/* ---------- logs ---------- */
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Logs {
+    pub dir: PathBuf,
+    pub koboldcpp: String,
+    pub launcher: String,
+}
+
+/// The last part of both logs (KoboldCpp's output and the launcher's own).
+#[tauri::command]
+pub fn read_logs(state: State<'_, AppState>) -> Logs {
+    let dir = state.dirs.logs();
+    Logs {
+        koboldcpp: crate::applog::tail(&dir.join("koboldcpp.log"), 256 * 1024),
+        launcher: crate::applog::tail(&dir.join("launcher.log"), 256 * 1024),
+        dir,
+    }
 }

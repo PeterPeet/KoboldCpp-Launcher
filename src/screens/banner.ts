@@ -29,7 +29,7 @@ export function serverBanner(): HTMLElement[] {
       h("span", { class: "dot", style: "background:var(--bad)" }),
       h("div", { class: "main" }, s.message),
       logBtn,
-      h("button", { class: "ghost", onclick: async () => reveal(`${(await api.paths()).data}/runs/last-run.log`) }, "Open log file"),
+      h("button", { class: "ghost", onclick: async () => reveal(`${(await api.paths()).logs}/koboldcpp.log`) }, "Open log file"),
       h("button", { class: "ghost", onclick: () => { S.server = { state: "stopped" }; S.running = null; render(); } }, "Dismiss")));
   if (showLog) out.push(logView());
   return out;

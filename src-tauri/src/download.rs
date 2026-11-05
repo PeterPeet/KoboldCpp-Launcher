@@ -190,7 +190,7 @@ pub async fn download_retry(client: &reqwest::Client, req: Request<'_>, cancel: 
         match download(client, req, cancel, &mut progress).await {
             Err(e @ (DownloadError::Http(_) | DownloadError::Incomplete { .. } | DownloadError::Status(500..))) if attempt < 3 && !cancel.is_cancelled() => {
                 attempt += 1;
-                eprintln!("download of {} interrupted ({e}), retry {attempt}", req.url);
+                crate::applog!("download of {} interrupted ({e}), retry {attempt}", req.url);
                 tokio::time::sleep(Duration::from_secs(2u64 << attempt)).await;
             }
             other => return other,

@@ -21,6 +21,8 @@ unchanged.
   uncensored switches. Export and import as a file.
 - **KoboldCpp updates:** installs the right official release for your PC, checks its SHA-256, and
   updates in place (a running model is restarted).
+- **Clean shutdown:** closing the launcher stops the KoboldCpp it started; a KoboldCpp left over from
+  a launcher that was killed is ended at the next start. Both logs are under Advanced setup › Logs.
 
 ## Where files live
 
@@ -34,6 +36,8 @@ Everything goes into the app data folder (on macOS
 | `models/` | downloaded models (default; more folders can be added in the library) |
 | `presets/*.kcpps` | saved presets |
 | `runs/last-run.kcpps` | settings of the last start |
+| `logs/koboldcpp.log` | everything KoboldCpp printed during the last start |
+| `logs/launcher.log` | what the launcher did: starts, stops, downloads, updates, errors |
 | `cache/` | Hugging Face answers (24 h) |
 
 ## Development

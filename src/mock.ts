@@ -50,6 +50,7 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
   let kept = 0;
   for (const x of MODELS) {
     if (o.officialOnly && x.kind !== "official") continue;
+    if (!family && !x.labs && x.kind === "finetune") continue;
     if (x.unc && !o.showUncensored) continue;
     const si = on.findIndex((s) => (s.id === "labs" ? !!x.labs : s.name === x.up) && (x.unc ? s.comps!.unc : x.kind === "official" ? s.comps!.official : s.comps!.finetune));
     if (si < 0) continue;

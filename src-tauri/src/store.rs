@@ -2,7 +2,7 @@
 //!
 //! Layout under the app data dir (e.g. `~/Library/Application Support/io.github.peterpeet.koboldlauncher`):
 //! `settings.json`, `bin/<tag>/<koboldcpp asset>`, `models/`, `presets/*.kcpps`, `runs/last-run.kcpps`,
-//! `cache/`.
+//! `logs/` (`koboldcpp.log`, `launcher.log`), `cache/`.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -22,9 +22,10 @@ impl Dirs {
     pub fn presets(&self) -> PathBuf { self.root.join("presets") }
     pub fn runs(&self) -> PathBuf { self.root.join("runs") }
     pub fn cache(&self) -> PathBuf { self.root.join("cache") }
+    pub fn logs(&self) -> PathBuf { self.root.join("logs") }
 
     pub fn ensure(&self) -> std::io::Result<()> {
-        for d in [self.root.clone(), self.bin(), self.presets(), self.runs(), self.cache()] {
+        for d in [self.root.clone(), self.bin(), self.presets(), self.runs(), self.cache(), self.logs()] {
             std::fs::create_dir_all(d)?;
         }
         Ok(())
