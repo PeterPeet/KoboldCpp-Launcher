@@ -72,7 +72,9 @@ pub fn port_free(port: u16) -> bool {
     TcpListener::bind(("0.0.0.0", port)).is_ok() && TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
-/// SIGTERM (or SIGKILL with `force`) to the process group started for KoboldCpp.
+/// SIGTERM (or SIGKILL with `force`) to the process group started for KoboldCpp. Windows has no
+/// process groups to signal: there the program and everything it started are ended (KoboldCpp's
+/// PyInstaller program runs the real server as a child process, which `Child::kill` alone misses).
 fn signal_group(pid: u32, force: bool) {
     #[cfg(unix)]
     unsafe {
@@ -82,7 +84,52 @@ fn signal_group(pid: u32, force: bool) {
         }
     }
     #[cfg(not(unix))]
-    let _ = (pid, force);
+    {
+        let _ = force;
+        kill_tree(pid);
+    }
+}
+
+/// All running processes with their parent and program file.
+fn process_table() -> Option<sysinfo::System> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
+    let mut sys = sysinfo::System::new().ok()?;
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_exe(UpdateKind::Always));
+    Some(sys)
+}
+
+/// `pid` and every process it started (children, grandchildren …), the deepest first.
+fn process_tree(sys: &sysinfo::System, pid: u32) -> Vec<sysinfo::Pid> {
+    let root = sysinfo::Pid::from_u32(pid);
+    if sys.process(root).is_none() {
+        return vec![];
+    }
+    let mut tree = vec![root];
+    let mut i = 0;
+    while i < tree.len() {
+        let p = tree[i];
+        // Windows reuses process ids: a child must have started after its parent.
+        let born = sys.process(p).map(|x| x.start_time()).unwrap_or(0);
+        let kids: Vec<sysinfo::Pid> = sys.processes().iter().filter(|(c, x)| x.parent() == Some(p) && !tree.contains(c) && x.start_time() >= born).map(|(c, _)| *c).collect();
+        tree.extend(kids);
+        i += 1;
+    }
+    tree.reverse();
+    tree
+}
+
+/// End `pid` and everything it started.
+#[cfg_attr(unix, allow(dead_code))]
+fn kill_tree(pid: u32) -> usize {
+    let Some(sys) = process_table() else { return 0 };
+    process_tree(&sys, pid).iter().filter_map(|p| sys.process(*p)).filter(|p| p.kill()).count()
+}
+
+/// Running programs whose file lies inside `bin_dir` (not this launcher).
+#[cfg_attr(unix, allow(dead_code))]
+fn programs_from(sys: &sysinfo::System, bin_dir: &Path) -> Vec<sysinfo::Pid> {
+    let me = sysinfo::Pid::from_u32(std::process::id());
+    sys.processes().iter().filter(|(p, x)| **p != me && x.exe().is_some_and(|e| crate::library::path_under(e, bin_dir))).map(|(p, _)| *p).collect()
 }
 
 /// A KoboldCpp started from `bin_dir` that still listens on `port` but that we no longer track
@@ -115,8 +162,16 @@ pub fn reclaim_port(port: u16, bin_dir: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = (port, bin_dir);
-        false
+        // No cheap way to ask Windows who holds the port: we track no KoboldCpp at this point,
+        // so every one started from our folder is left over.
+        let stopped = kill_orphans(bin_dir) > 0;
+        if stopped {
+            let end = Instant::now() + Duration::from_secs(8);
+            while !port_free(port) && Instant::now() < end {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+        stopped
     }
 }
 
@@ -152,8 +207,14 @@ pub fn kill_orphans(bin_dir: &Path) -> usize {
     }
     #[cfg(not(unix))]
     {
-        let _ = bin_dir;
-        0
+        let Some(sys) = process_table() else { return 0 };
+        let pids = programs_from(&sys, bin_dir);
+        for p in &pids {
+            if let Some(x) = sys.process(*p) {
+                x.kill();
+            }
+        }
+        pids.len()
     }
 }
 
@@ -478,6 +539,24 @@ mod tests {
         assert!(!started_from("vim /Users/x/Library/Application Support/kl/bin/v1.124.2/koboldcpp-mac-arm64", bin));
         assert!(!started_from("/Users/x/Library/Application Support/kl/bin-other/koboldcpp", bin));
         assert!(!started_from("/anything", ""));
+    }
+
+    #[test]
+    fn process_tree_finds_children() {
+        // Like KoboldCpp's PyInstaller program: a parent that runs the real work as a child.
+        let mut child = Command::new("/bin/sh").args(["-c", "sleep 30 & sleep 30 & wait"]).spawn().unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        let tree = process_table().map(|sys| process_tree(&sys, child.id())).unwrap_or_default();
+        if tree.is_empty() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return eprintln!("process list not readable here, skipped");
+        }
+        assert_eq!(tree.len(), 3, "the shell and its two sleeps");
+        assert_eq!(*tree.last().unwrap(), sysinfo::Pid::from_u32(child.id()), "the parent goes last");
+        assert_eq!(kill_tree(child.id()), 3);
+        let _ = child.wait();
+        assert!(process_tree(&process_table().unwrap(), child.id()).is_empty());
     }
 
     #[test]

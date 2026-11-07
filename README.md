@@ -14,8 +14,9 @@ option in one place.
 ## Download
 
 Get the installer for your system from [Releases](https://github.com/PeterPeet/KoboldCpp-Launcher/releases):
-macOS (Apple Silicon), Windows and Linux (x86_64 and arm64). On first start the launcher installs the
-matching official KoboldCpp release for you.
+macOS (Apple Silicon), Windows and Linux (x86_64 and arm64). On Windows there is also a portable
+`.exe` that runs without installing; on Linux the `.AppImage` does the same. On first start the
+launcher installs the matching official KoboldCpp release for you.
 
 The installers are not signed with an Apple or Microsoft certificate yet, so the system asks once:
 
@@ -29,7 +30,8 @@ The installers are not signed with an Apple or Microsoft certificate yet, so the
 ### Start in one click
 The start screen detects your GPUs, CPU and memory (type and bandwidth, e.g. "8.0 GB LPDDR5 RAM").
 It shows KoboldCpp's own ready-made setups for your class of PC, and a list of popular models
-from Hugging Face. Each list shows only what fits.
+from Hugging Face. Each list shows only what fits. **Stable** lets models use up to 60 % of RAM so
+the system stays responsive; **Unstable** allows 98 % for bigger models, at the risk of a frozen system.
 
 - **Get and start** downloads everything needed and starts KoboldCpp. A model already on disk
   gets a green **Start** button instead.

@@ -195,6 +195,18 @@ First full version built in six phases (commits on `main`). Decisions made on th
 - **Fit:** local files use KoboldCpp's own layer estimate (`autoset_gpu_layers`); Hugging Face lists
   use sizes only (weights + context overhead). Apple Silicon: Metal budget ≈ ⅔ of RAM (¾ above
   36 GB), all or nothing. At launch `--gpulayers -1` (autofit) unless the user sets a number.
+- **RAM for models (start screen, Stable / Unstable):** models may use 60 % of RAM ("Stable",
+  default: the system stays responsive) or 98 % ("Unstable", for the biggest models; the system
+  may swap or freeze). The same budget counts for CPU-only and for the CPU part of a split model
+  (before: 60 % / 50 %). Not shown on Apple Silicon, where the Metal budget decides.
+- **Stopping on Windows:** KoboldCpp's PyInstaller program runs the server as a child process,
+  and Windows has no process groups to signal, so Stop, closing the launcher and the leftover
+  check at start end the whole process tree (sysinfo), not only the program we started.
+- **Library skips helper GGUFs:** LoRA adapters, importance matrices (`general.type`), control
+  vectors and files without weights. The family comes from the model's name first (GLM-4.7-Flash
+  uses the `deepseek2` architecture), then from the architecture.
+- **Drives on Windows:** resolved paths (`\\?\C:\…`) and drive mounts (`C:\`) are compared without
+  the `\\?\` prefix and without letter case, so models on C: count for that drive.
 - **Quant pick:** Q6_K → Q5_K_M → Q4_K_M (Q8_0 for models under 3 GB); then Q4_K_M partly on CPU;
   then a smaller quant marked "Smaller quant". F16/BF16/Q5+ never count as fallback.
 - **Popular list** shows text and vision-chat models only (image/voice come from templates).

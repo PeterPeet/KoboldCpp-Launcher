@@ -139,18 +139,24 @@ pub fn context_overhead(size: u64, context: u32) -> u64 {
     (0.5 * GIB + per_4k * (context as f64 / 4096.0)) as u64
 }
 
-/// Fit from sizes only. `vram`: memory of the chosen GPUs (0 = CPU only); `unified`: Apple Silicon.
+/// Share of RAM a model may use: "stable" leaves room for the system and other apps,
+/// "unstable" uses nearly all of it (the system may slow down or run out of memory).
+pub const RAM_SHARE_STABLE: f64 = 0.6;
+pub const RAM_SHARE_UNSTABLE: f64 = 0.98;
+
+/// Fit from sizes only. `vram`: memory of the chosen GPUs (0 = CPU only); `ram`: RAM models may
+/// use (total RAM × `RAM_SHARE_*`, chosen in the app); `unified`: Apple Silicon.
 pub fn fit_by_size(size: u64, context: u32, vram: u64, ram: u64, unified: bool) -> Fit {
     let need = size + context_overhead(size, context);
     if unified {
         return if need <= vram { Fit::Full } else { Fit::None };
     }
     if vram == 0 {
-        return if (size as f64) <= ram as f64 * 0.6 { Fit::Cpu } else { Fit::None };
+        return if size <= ram { Fit::Cpu } else { Fit::None };
     }
     if need <= vram {
         Fit::Full
-    } else if (size as f64) <= vram as f64 + ram as f64 * 0.5 {
+    } else if size <= vram + ram {
         Fit::Partial
     } else {
         Fit::None
@@ -172,7 +178,7 @@ pub fn fit_by_layers(model: &ModelShape, extras: &Extras, s: &Settings, vram: u6
     let n = estimate_layers(model, extras, s, vram, vram_used);
     let fit = if n > layers {
         Fit::Full
-    } else if (model.size as f64) <= vram as f64 + ram as f64 * 0.5 {
+    } else if model.size <= vram + ram {
         Fit::Partial
     } else {
         Fit::None
@@ -367,8 +373,16 @@ mod tests {
         assert_eq!(pick_quant(&qwen27, 16384, 40 * G, 64 * G, false).unwrap().quant, "Q6_K");
         let tiny = q(&[("Q8_0", 1.9), ("Q6_K", 1.5), ("Q4_K_M", 1.1)]);
         assert_eq!(pick_quant(&tiny, 16384, 8 * G, 16 * G, false).unwrap().quant, "Q8_0");
-        let p = pick_quant(&q(&[("Q4_K_M", 118.0), ("Q2_K", 64.0)]), 16384, 24 * G, 128 * G, false).unwrap();
+        // 128 GB RAM: "stable" lets models use ~77 GB of it, "unstable" ~125 GB.
+        let big = q(&[("Q4_K_M", 118.0), ("Q2_K", 64.0)]);
+        let ram = |share: f64| (128.0 * share * GIB) as u64;
+        let p = pick_quant(&big, 16384, 24 * G, ram(RAM_SHARE_STABLE), false).unwrap();
         assert_eq!((p.quant.as_str(), p.fit, p.fallback), ("Q2_K", Fit::Partial, true));
+        let p = pick_quant(&big, 16384, 24 * G, ram(RAM_SHARE_UNSTABLE), false).unwrap();
+        assert_eq!((p.quant.as_str(), p.fit, p.fallback), ("Q4_K_M", Fit::Partial, false));
+        assert_eq!(fit_by_size(70 * G, 16384, 0, ram(RAM_SHARE_STABLE), false), Fit::Cpu);
+        assert_eq!(fit_by_size(100 * G, 16384, 0, ram(RAM_SHARE_STABLE), false), Fit::None);
+        assert_eq!(fit_by_size(100 * G, 16384, 0, ram(RAM_SHARE_UNSTABLE), false), Fit::Cpu);
         assert!(pick_quant(&q(&[("Q4_K_M", 118.0)]), 16384, 8 * G, 16 * G, false).is_none());
         // Google-style single QAT Q4_0 upload: a normal pick.
         let p = pick_quant(&q(&[("Q4_0", 2.5)]), 16384, 8 * G, 16 * G, false).unwrap();

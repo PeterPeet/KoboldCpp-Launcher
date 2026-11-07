@@ -116,7 +116,7 @@ function runStatus(m: LocalModel, f: LocalFit | undefined): RunStatus {
   return { level: "ok", label: "Runs here", detail: S.hw?.unifiedMemory ? "Fits in memory, fully on the GPU." : "Fits completely on the GPU.", start: "yes" };
 }
 
-const family = (m: LocalModel) => (m.architecture ?? "other").replace(/\d.*$/, "") || "other";
+const family = (m: LocalModel) => m.family ?? ((m.architecture ?? "other").replace(/\d.*$/, "") || "other");
 const ago = (t: number | null) => {
   if (!t) return "Never";
   const d = Math.floor((Date.now() / 1000 - t) / 86400);

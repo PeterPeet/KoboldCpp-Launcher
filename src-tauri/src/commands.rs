@@ -109,6 +109,7 @@ pub struct SettingsPatch {
     pub check_updates_on_start: Option<bool>,
     pub include_prereleases: Option<bool>,
     pub sources: Option<Vec<crate::hf::Source>>,
+    pub ram_mode: Option<crate::store::RamMode>,
 }
 
 impl SettingsPatch {
@@ -118,6 +119,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.include_prereleases {
             s.include_prereleases = v;
+        }
+        if let Some(v) = self.ram_mode {
+            s.ram_mode = v;
         }
         if let Some(mut v) = self.sources {
             v.retain(|x| x.builtin || crate::hf::valid_source_name(&x.name));
@@ -484,6 +488,7 @@ pub fn fits(items: Vec<(u64, u32)>, vram: u64, ram: u64, unified: bool) -> Vec<f
 #[serde(rename_all = "camelCase")]
 pub struct Machine {
     pub vram: u64,
+    /// RAM models may use (total × the share for the chosen RAM mode).
     pub ram: u64,
     pub unified: bool,
     pub context: u32,

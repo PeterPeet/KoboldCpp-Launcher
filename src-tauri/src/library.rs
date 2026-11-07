@@ -37,6 +37,9 @@ pub struct LocalModel {
     pub name: String,
     pub kind: ModelType,
     pub architecture: Option<String>,
+    /// Model family ("glm", "qwen", …) from the model's name. The architecture alone can mislead:
+    /// GLM-4.7-Flash, for one, uses DeepSeek's `deepseek2`.
+    pub family: Option<String>,
     pub quant: Option<String>,
     pub size_label: Option<String>,
     /// All split parts together.
@@ -98,7 +101,31 @@ pub fn classify(file: &str, arch: Option<&str>) -> ModelType {
 /// resolved first (on macOS `/Volumes/<startup disk>` points to `/`).
 pub fn drive_of<'a>(path: &Path, drives: &'a [Drive]) -> Option<&'a Drive> {
     let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    drives.iter().filter(|d| real.starts_with(&d.mount)).max_by_key(|d| d.mount.len())
+    drives.iter().filter(|d| path_under(&real, Path::new(&d.mount))).max_by_key(|d| d.mount.len())
+}
+
+/// Is `path` the folder `dir` or inside it? On Windows letter case and `/` vs `\` don't matter,
+/// and the `\\?\` form that resolving a path gives (`\\?\C:\Models`) equals `C:\Models`.
+pub fn path_under(path: &Path, dir: &Path) -> bool {
+    under(&path.to_string_lossy(), &dir.to_string_lossy(), cfg!(windows))
+}
+
+fn under(path: &str, dir: &str, windows: bool) -> bool {
+    let norm = |s: &str| {
+        if !windows {
+            return s.to_string();
+        }
+        let s = s.replace('/', "\\");
+        let s = if let Some(unc) = s.strip_prefix(r"\\?\UNC\") { format!(r"\\{unc}") } else { s.strip_prefix(r"\\?\").unwrap_or(&s).to_string() };
+        s.to_lowercase()
+    };
+    let sep = if windows { '\\' } else { '/' };
+    let (p, d) = (norm(path), norm(dir));
+    let d = d.trim_end_matches(sep);
+    if d.is_empty() && !dir.is_empty() {
+        return p.starts_with(sep);
+    }
+    !d.is_empty() && (p == d || p.strip_prefix(d).is_some_and(|r| r.starts_with(sep)))
 }
 
 pub fn drives() -> Vec<Drive> {
@@ -212,15 +239,21 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
             let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
             gguf::split_part(n).is_none_or(|(part, _)| part == 1)
         })
-        .map(|p| {
+        .filter_map(|p| {
             let file = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
             let info = gguf::read_file(p).ok();
+            // LoRA adapters, importance matrices and the like are no models of their own.
+            if info.as_ref().is_some_and(gguf::is_helper_file) {
+                return None;
+            }
             let size = info.as_ref().map(|i| i.total_size).filter(|&s| s > 0).unwrap_or_else(|| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0));
             let arch = info.as_ref().and_then(|i| i.architecture.clone());
             let stem = file.trim_end_matches(".gguf");
-            LocalModel {
+            let name = info.as_ref().and_then(|i| i.name.clone()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| stem.to_string());
+            Some(LocalModel {
                 kind: classify(&file, arch.as_deref()),
-                name: info.as_ref().and_then(|i| i.name.clone()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| stem.to_string()),
+                family: family_of(&name, &file),
+                name,
                 quant: info.as_ref().and_then(|i| i.file_type.clone()).or_else(|| crate::hf::quant_of(&file).map(|q| q.0)),
                 size_label: info.as_ref().and_then(|i| i.size_label.clone()),
                 size,
@@ -242,7 +275,7 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
                 mtp_draft: None,
                 path: p.clone(),
                 file,
-            }
+            })
         })
         .collect();
     // Pair text models with a projector in the same folder → vision model.
@@ -287,6 +320,12 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
     (models, shown)
 }
 
+/// Family from the model's name, then its file name (see `LocalModel::family`).
+fn family_of(name: &str, file: &str) -> Option<String> {
+    let flat = |s: &str| s.replace([' ', '_'], "-");
+    crate::hf::family_of(&flat(name)).or_else(|| crate::hf::family_of(&flat(file))).map(str::to_string)
+}
+
 /// A safetensors model folder (MLX or Transformers) as a library entry: listed so the user sees
 /// it, but KoboldCpp can't load it.
 fn weights_model(dir: &Path, drives: &[Drive], last_used: &HashMap<String, u64>) -> LocalModel {
@@ -302,6 +341,7 @@ fn weights_model(dir: &Path, drives: &[Drive], last_used: &HashMap<String, u64>)
     LocalModel {
         path: dir.to_path_buf(),
         file: name.clone(),
+        family: family_of(&name, ""),
         name,
         kind: if cfg.get("vision_config").is_some() { ModelType::Vision } else { ModelType::Text },
         architecture: arch,
@@ -395,6 +435,43 @@ mod tests {
     use super::*;
 
     #[cfg(unix)]
+    #[test]
+    fn windows_paths_match_their_drive() {
+        // Resolved Windows paths start with \\?\; drives are listed as C:\.
+        assert!(under(r"\\?\C:\Users\me\Models\a.gguf", r"C:\", true));
+        assert!(under(r"c:/models/a.gguf", r"C:\", true));
+        assert!(under(r"\\?\UNC\nas\share\a.gguf", r"\\nas\share", true));
+        assert!(!under(r"\\?\D:\Models\a.gguf", r"C:\", true));
+        assert!(!under(r"C:\Models2\a.gguf", r"C:\Models", true));
+        assert!(under("/home/me/m.gguf", "/", false));
+        assert!(under("/mnt/data/m.gguf", "/mnt/data", false));
+        assert!(!under("/mnt/data2/m.gguf", "/mnt/data", false));
+        assert!(!under("/Mnt/data/m.gguf", "/mnt/data", false), "case counts outside Windows");
+    }
+
+    #[test]
+    fn helper_files_are_not_models_and_family_comes_from_the_name() {
+        use gguf::tests::Builder;
+        let d = tempfile::tempdir().unwrap();
+        let w = |f: &str, b: Vec<u8>| std::fs::write(d.path().join(f), b).unwrap();
+        // GLM-4.7-Flash runs on DeepSeek's architecture.
+        w("GLM-4.7-Flash-Q4_K_M.gguf", Builder::new().str("general.architecture", "deepseek2").str("general.name", "GLM 4.7 Flash").build());
+        w("DeepSeek-V2-Lite-Q4_K_M.gguf", Builder::new().str("general.architecture", "deepseek2").build());
+        w("phi-4-Q4_K_M.gguf", Builder::new().str("general.architecture", "phi3").build());
+        w("lora-roleplay.gguf", Builder::new().str("general.architecture", "llama").str("general.type", "adapter").build());
+        w("model.imatrix.gguf", Builder::new().str("general.type", "imatrix").build());
+        w("ggml-vocab-llama-bpe.gguf", Builder::new().str("general.architecture", "llama").tensors(0).build());
+        w("happy.gguf", Builder::new().str("general.architecture", "controlvector").build());
+        let (models, _) = scan(&[(d.path().to_path_buf(), false)], &HashMap::new(), None);
+        let mut got: Vec<(String, Option<String>)> = models.iter().map(|m| (m.file.clone(), m.family.clone())).collect();
+        got.sort();
+        assert_eq!(got, vec![
+            ("DeepSeek-V2-Lite-Q4_K_M.gguf".into(), Some("deepseek".into())),
+            ("GLM-4.7-Flash-Q4_K_M.gguf".into(), Some("glm".into())),
+            ("phi-4-Q4_K_M.gguf".into(), None),
+        ]);
+    }
+
     #[test]
     fn follows_symlinks() {
         let d = tempfile::tempdir().unwrap();

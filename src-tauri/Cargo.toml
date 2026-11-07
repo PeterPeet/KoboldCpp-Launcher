@@ -1,6 +1,6 @@
 [package]
 name = "kobold-launcher"
-version = "0.1.0"
+version = "0.1.1"
 description = "A modern launcher for KoboldCpp / Esobold"
 authors = ["PeterPeet"]
 license = "AGPL-3.0-only"

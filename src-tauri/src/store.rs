@@ -97,6 +97,18 @@ pub struct Settings {
     pub last_used: std::collections::HashMap<String, u64>,
     /// Model path → generation speed KoboldCpp reported (tokens/s), from the last answers.
     pub speeds: std::collections::HashMap<String, f64>,
+    /// How much RAM models may use (see `fit::RAM_SHARE_*`).
+    pub ram_mode: RamMode,
+}
+
+/// "stable": models use at most 60 % of RAM, the system stays responsive. "unstable": up to
+/// 98 %, for the biggest models; the system may slow down or run out of memory.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RamMode {
+    #[default]
+    Stable,
+    Unstable,
 }
 
 impl Default for Settings {
@@ -113,6 +125,7 @@ impl Default for Settings {
             sources_version: crate::hf::SOURCES_VERSION,
             last_used: Default::default(),
             speeds: Default::default(),
+            ram_mode: RamMode::Stable,
         }
     }
 }

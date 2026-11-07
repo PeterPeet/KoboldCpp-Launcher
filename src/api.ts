@@ -32,7 +32,10 @@ export interface Settings {
   /** Esobold mode (Advanced setup › Esobold) and its own installed program. */
   esobold: boolean; esoboldBinary: InstalledBinary | null;
   modelsDir: string | null; libraryFolders: LibraryFolder[]; sources: Source[];
+  /** How much RAM models may use: "stable" 60 %, "unstable" 98 % (see `ramShare` in state.ts). */
+  ramMode: RamMode;
 }
+export type RamMode = "stable" | "unstable";
 export interface Paths { data: string; models: string; presets: string; logs: string }
 export interface Logs { dir: string; koboldcpp: string; launcher: string }
 export type ServerStatus =
@@ -55,7 +58,7 @@ export interface Ranked {
   id: string; name: string; author: string; params: string | null; kind: ModelKindHf; official: boolean; family: string | null; uncensored: boolean;
   likes: number; downloads: number; ageDays: number; score: number; source: number; baseModel: string | null; tags: string[];
 }
-export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[] }
+export interface SettingsPatch { checkUpdatesOnStart?: boolean; includePrereleases?: boolean; sources?: Source[]; ramMode?: RamMode }
 export interface PopularItem extends Ranked {
   pick: QuantPick; urls: string[]; mmproj: [string, number] | null;
   /** Everything (model + vision file) is on this computer. */
@@ -80,13 +83,16 @@ export interface Source {
   comps: { official: boolean; finetune: boolean; unc: boolean } | null;
 }
 export interface Machine {
+  /** ram: what models may use (total × the RAM mode's share), not the total. */
   vram: number; ram: number; unified: boolean; context: number;
   /** Memory bandwidths (GB/s) for the speed estimate. */
   speed: { gpuBandwidth: number | null; cpuBandwidth: number | null; apple: boolean };
 }
 export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector" | "MtpHead";
 export interface LocalModel {
-  path: string; file: string; name: string; kind: ModelKind; architecture: string | null; quant: string | null; sizeLabel: string | null;
+  path: string; file: string; name: string; kind: ModelKind; architecture: string | null;
+  /** Family from the model's name ("glm", "qwen" …); null: fall back to the architecture. */
+  family: string | null; quant: string | null; sizeLabel: string | null;
   size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
   mmproj: string | null; drive: string | null; modified: number | null; lastUsed: number | null;
   missingParts: number; readable: boolean; support: "yes" | "no" | "unknown" | null;
@@ -151,7 +157,7 @@ const GB = 1024 ** 3;
 const mockListeners: { event: string; cb: (p: unknown) => void }[] = [];
 const emitMock = (event: string, payload: unknown) => mockListeners.filter((l) => l.event === event).forEach((l) => l.cb(payload));
 let mockSettings: Settings = {
-  binary: { path: "/Applications/koboldcpp", version: "v1.123.1", asset: "koboldcpp-mac-arm64" }, checkUpdatesOnStart: true, includePrereleases: false, modelsDir: null, libraryFolders: [],
+  binary: { path: "/Applications/koboldcpp", version: "v1.123.1", asset: "koboldcpp-mac-arm64" }, checkUpdatesOnStart: true, includePrereleases: false, modelsDir: null, libraryFolders: [], ramMode: "stable",
   esobold: false, esoboldBinary: null,
   sources: [
     { id: "kcppt", name: "KoboldCpp templates", builtin: true, desc: "Ready-made setups from hf.co/koboldcpp", on: true, comps: null },

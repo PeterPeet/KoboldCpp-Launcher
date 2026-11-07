@@ -4,7 +4,7 @@ import { api, fmtBytes, type Fit, type PopularItem, type Template } from "../api
 import { checkbox, fmt, h, toggle, toast } from "../dom";
 import { openSources } from "../dialogs/sources";
 import { getAndStart, goControl } from "../downloads";
-import { S, machine, render, vram } from "../state";
+import { S, machine, ramForModels, ramShare, render, vram } from "../state";
 import { serverBanner } from "./banner";
 import { getOpts, setOpts } from "../modelopts";
 
@@ -142,11 +142,27 @@ function hardwareRow() {
   const tier = vram() ? `${TIER_LABEL[selectedTier()]} · ${fmtBytes(vram())} ${hw.unifiedMemory ? "for models" : "GPU"}` : "CPU only";
   return h("div", { class: "hw" },
     h("span", {}, "Run on"), ...chips,
-    // "for models": what the launcher counts on when a model runs on the CPU (60 % of RAM, as in fit.rs).
-    h("span", { class: "hwchip on fixed", title: `The CPU is always used. For system stability, models should use at most ${fmtBytes(hw.ramTotal * 0.6)}, which leaves room for the system and other apps. Memory bandwidth: ${hw.ramBandwidth ? `about ${Math.round(hw.ramBandwidth)} GB/s` : "N/A (the system doesn't report the memory type and speed)"}.` },
-      `CPU · ${hw.cpuName || hw.arch} · ${fmtBytes(hw.ramTotal)} ${hw.ramType ? hw.ramType + " RAM" : "RAM (type N/A)"} · ~${fmtBytes(hw.ramTotal * 0.6)} for models`),
+    // "for models": what the launcher counts on when a model uses RAM (the RAM mode's share, as in fit.rs).
+    h("span", { class: "hwchip on fixed", title: `The CPU is always used. Models may use up to ${fmtBytes(ramForModels())} of RAM (${Math.round(ramShare() * 100)} %). Memory bandwidth: ${hw.ramBandwidth ? `about ${Math.round(hw.ramBandwidth)} GB/s` : "N/A (the system doesn't report the memory type and speed)"}.` },
+      `CPU · ${hw.cpuName || hw.arch} · ${fmtBytes(hw.ramTotal)} ${hw.ramType ? hw.ramType + " RAM" : "RAM (type N/A)"} · ~${fmtBytes(ramForModels())} for models`),
+    hw.unifiedMemory ? null : ramModeSwitch(),
     h("span", { class: "pill p-acc" }, tier),
     hw.gpus.length === 0 ? h("span", { class: "note", style: "margin:0" }, "No supported GPU found. KoboldCpp runs on the CPU.") : null);
+}
+
+/** Stable (60 % of RAM for models) or Unstable (98 %: bigger models, but the system may freeze). */
+function ramModeSwitch() {
+  const mode = S.settings?.ramMode ?? "stable";
+  const opt = (m: "stable" | "unstable", label: string, title: string) =>
+    h("button", { "aria-pressed": String(mode === m), title, onclick: async () => {
+      if (mode === m || !S.settings) return;
+      S.settings = await api.saveSettings({ ramMode: m });
+      render();
+      toast(m === "stable" ? "Stable: models use at most 60 % of RAM" : "Unstable: models may use up to 98 % of RAM. The system can slow down or freeze.");
+    } }, label);
+  return h("span", { class: "seg", role: "group", "aria-label": "RAM for models" },
+    opt("stable", "Stable", "Models use at most 60 % of RAM, so the system and other apps stay responsive"),
+    opt("unstable", "Unstable", "Models may use up to 98 % of RAM: bigger models fit, but the system can slow down, swap or freeze"));
 }
 
 function templatesSection() {

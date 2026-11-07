@@ -31,6 +31,8 @@ pub struct GgufInfo {
     pub architecture: Option<String>,
     pub name: Option<String>,
     pub size_label: Option<String>,
+    /// `general.type`: "model", or e.g. "adapter" (LoRA) and "imatrix" for helper files.
+    pub kind: Option<String>,
     /// Quantization name from `general.file_type`, e.g. "Q4_K_M".
     pub file_type: Option<String>,
     pub block_count: Option<u32>,
@@ -166,6 +168,15 @@ pub fn file_type_name(ft: u32) -> Option<&'static str> {
     })
 }
 
+/// A GGUF file that is not a model to load on its own: LoRA adapters, importance matrices,
+/// control vectors and tokenizer-only files (no weights; the first part of a split model may
+/// hold none either).
+pub fn is_helper_file(info: &GgufInfo) -> bool {
+    let kind = info.kind.as_deref().unwrap_or("model").to_ascii_lowercase();
+    let arch = info.architecture.as_deref().unwrap_or("").to_ascii_lowercase();
+    !matches!(kind.as_str(), "model" | "mmproj") || arch == "controlvector" || (info.tensor_count == 0 && info.parts <= 1)
+}
+
 /// `-00001-of-00003` in a file name → (part, total).
 pub fn split_part(file_name: &str) -> Option<(u32, u32)> {
     let i = file_name.find("-of-")?;
@@ -249,6 +260,7 @@ fn header<T: Read>(input: T, prefix: bool) -> Result<(GgufInfo, bool), GgufError
             "general.architecture" => info.architecture = val.into_string(),
             "general.name" => info.name = val.into_string(),
             "general.size_label" => info.size_label = val.into_string(),
+            "general.type" => info.kind = val.into_string(),
             "general.file_type" => info.file_type = val.as_u32().and_then(file_type_name).map(str::to_string),
             _ => arch_keys.push((key, val)),
         }
@@ -285,6 +297,7 @@ pub mod tests {
     pub struct Builder {
         kv: Vec<u8>,
         count: u64,
+        tensors: Option<u64>,
     }
 
     impl Builder {
@@ -328,10 +341,14 @@ pub mod tests {
             }
             self
         }
+        pub fn tensors(mut self, n: u64) -> Self {
+            self.tensors = Some(n);
+            self
+        }
         pub fn build(self) -> Vec<u8> {
             let mut out = b"GGUF".to_vec();
             out.extend(3u32.to_le_bytes());
-            out.extend(291u64.to_le_bytes());
+            out.extend(self.tensors.unwrap_or(291).to_le_bytes());
             out.extend(self.count.to_le_bytes());
             out.extend(self.kv);
             out

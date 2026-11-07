@@ -9,9 +9,9 @@ const GB = 1024 ** 3;
 export function mockFit(size: number, context: number, m: Machine): Fit {
   const need = size + 0.5 * GB + Math.min(Math.max(size * 0.03, 0.12 * GB), 0.6 * GB) * (context / 4096);
   if (m.unified) return need <= m.vram ? "full" : "none";
-  if (m.vram === 0) return size <= m.ram * 0.6 ? "cpu" : "none";
+  if (m.vram === 0) return size <= m.ram ? "cpu" : "none";
   if (need <= m.vram) return "full";
-  return size <= m.vram + m.ram * 0.5 ? "partial" : "none";
+  return size <= m.vram + m.ram ? "partial" : "none";
 }
 
 export function mockTemplates(): Template[] {
@@ -102,7 +102,7 @@ export function mockLibrary(): LibraryView {
   const kind = (t: string): ModelKind => (t === "Image" || t === "Speech" || t === "Embedding" || t === "Vision" ? t : "Text");
   const models: LocalModel[] = LOCAL.map((m) => ({
     path: `/${m.drive}/models/${m.name.replace(/ /g, "-")}.gguf`, file: `${m.name.replace(/ /g, "-")}.gguf`, name: m.name, kind: kind(m.type),
-    architecture: m.famName.toLowerCase(), quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: m.id === 4 ? 3 : 1,
+    architecture: m.famName.toLowerCase(), family: null, quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: m.id === 4 ? 3 : 1,
     layers: 40, contextLength: m.ctx === "–" ? null : parseInt(m.ctx) * 1024, headCountKv: 8, kvLen: 128,
     mmproj: m.type === "Vision" ? `/${m.drive}/models/mmproj-F16.gguf` : null, drive: `/${m.drive}`, modified: null,
     lastUsed: m.used === "Never" ? null : Date.now() / 1000 - 86400 * (m.id % 9),
@@ -110,7 +110,7 @@ export function mockLibrary(): LibraryView {
     support: m.type === "Image" || m.type === "Speech" ? null : m.id === 10 ? "no" as const : "yes" as const,
   })).filter((m) => !removed.has(m.path));
   models.push({
-    path: "/C/lmstudio/gemma-4-E2B-it-MLX-4bit", file: "gemma-4-E2B-it-MLX-4bit", name: "gemma-4-E2B-it-MLX-4bit", kind: "Vision", architecture: "gemma4",
+    path: "/C/lmstudio/gemma-4-E2B-it-MLX-4bit", file: "gemma-4-E2B-it-MLX-4bit", name: "gemma-4-E2B-it-MLX-4bit", kind: "Vision", architecture: "gemma4", family: "gemma",
     quant: "4-bit", sizeLabel: null, size: 4.3 * GB, parts: 1, layers: 35, contextLength: 131072, headCountKv: null, kvLen: null, mmproj: null,
     drive: "/C", modified: null, lastUsed: null, missingParts: 0, readable: true, support: null, format: "mlx", mtp: false, mtpDraft: null,
   });

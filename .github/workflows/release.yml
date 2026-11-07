@@ -20,7 +20,7 @@ jobs:
           - platform: macos-latest          # Apple Silicon (.dmg, .app)
             args: --target aarch64-apple-darwin
             label: macOS
-          - platform: windows-latest        # .msi and setup .exe
+          - platform: windows-latest        # .msi, setup .exe and portable .exe
             args: ""
             label: Windows
           - platform: ubuntu-22.04          # .AppImage, .deb, .rpm (x86_64)
@@ -65,7 +65,7 @@ jobs:
 
             **Which file?**
             - **macOS** (Apple Silicon): `…_macOS_aarch64.dmg`
-            - **Windows**: `…_Windows_x64-setup.exe` (or the `.msi`)
+            - **Windows**: `…_Windows_x64-setup.exe` (or the `.msi`); portable without installing: `…_Windows_x64.exe` (needs Microsoft Edge WebView2, which Windows 10 and 11 already have)
             - **Linux**: `.AppImage` (any distribution), `.deb` (Debian, Ubuntu), `.rpm` (Fedora, openSUSE). `amd64`/`x86_64` = Intel/AMD PCs, `aarch64`/`arm64` = ARM.
 
             On first start the launcher installs the matching official KoboldCpp release for you.
@@ -76,6 +76,8 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+          # The bare program as a portable .exe, on Windows only (macOS needs the .app, Linux has the AppImage).
+          uploadPlainBinary: ${{ matrix.label == 'Windows' }}
           # File names say the system: KoboldCpp-Launcher_0.1.0_macOS_aarch64.dmg,
-          # …_Windows_x64-setup.exe, …_Linux_amd64.AppImage
+          # …_Windows_x64-setup.exe, …_Windows_x64.exe (portable), …_Linux_amd64.AppImage
           assetNamePattern: KoboldCpp-Launcher_[version]_${{ matrix.label }}_[arch][setup][ext]
