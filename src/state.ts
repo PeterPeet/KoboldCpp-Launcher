@@ -53,10 +53,11 @@ export const S = {
 /** Graphics memory of the ticked GPUs (bytes). */
 export const vram = () => (S.hw?.gpus ?? []).reduce((a, g, i) => a + (S.useGpu[i] !== false ? g.vram : 0), 0);
 
-/** What fit calculations need about this PC with the current GPU selection. */
 /** Share of RAM models may use; same values as `RAM_SHARE_*` in fit.rs. */
 export const ramShare = () => (S.settings?.ramMode === "unstable" ? 0.98 : 0.6);
-export const ramForModels = () => (S.hw?.ramTotal ?? 0) * ramShare();
+/** Whole bytes: Rust reads it as an integer (u64) and rejects fractions. */
+export const ramForModels = () => Math.floor((S.hw?.ramTotal ?? 0) * ramShare());
+/** What fit calculations need about this PC with the current GPU selection. */
 export const machine = (context = 16384): Machine => ({ vram: vram(), ram: ramForModels(), unified: !!S.hw?.unifiedMemory && vram() > 0, context, speed: speedHw() });
 
 /** Bandwidths of the selected GPUs: layers run one after another, so time adds up per share. */
