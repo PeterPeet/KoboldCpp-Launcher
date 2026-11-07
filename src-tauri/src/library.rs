@@ -434,7 +434,6 @@ mod drive_tests {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn windows_paths_match_their_drive() {
         // Resolved Windows paths start with \\?\; drives are listed as C:\.
@@ -472,6 +471,7 @@ mod tests {
         ]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn follows_symlinks() {
         let d = tempfile::tempdir().unwrap();
