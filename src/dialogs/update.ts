@@ -10,19 +10,25 @@ export const REPO = () => repoUrl();
 
 const installed = () => S.binary?.installed && S.binary.present;
 
+/** Top-bar status in two short lines (name above, state below), so both fit in narrow windows. */
+function label(b: HTMLElement, name: string, state?: string) {
+  b.replaceChildren(state ? h("span", { class: "upd-txt" }, h("span", {}, name), h("b", {}, state)) : name);
+  b.setAttribute("aria-label", state ? `${name}: ${state}` : name);
+}
+
 export function drawUpdBtn() {
   const b = $("#updBtn")!;
   const ver = S.binary?.installed?.version;
   $("#verLabel")!.textContent = installed() ? ver ?? "custom build" : "not installed";
   if (!installed()) {
     b.className = "upd new";
-    b.textContent = S.binary?.asset ? `Install ${progName()}` : `${progName()}`;
+    label(b, S.binary?.asset ? `Install ${progName()}` : `${progName()}`);
   } else if (S.update?.updateAvailable && S.update.latest) {
     b.className = "upd new";
-    b.textContent = `${progName()}: Update to ${S.update.latest.tag}`;
+    label(b, progName(), `Update to ${S.update.latest.tag}`);
   } else {
     b.className = "upd ok";
-    b.textContent = S.update ? `${progName()}: Up to date` : `${progName()}: Check for updates`;
+    label(b, progName(), S.update ? "Up to date" : "Check for updates");
   }
   drawSelfUpd();
 }
@@ -36,7 +42,7 @@ function drawSelfUpd() {
   const u = S.selfUpdate;
   const url = u?.updateAvailable && u.url ? u.url : `${LAUNCHER_REPO}/releases`;
   b.className = u?.updateAvailable ? "upd new" : "upd ok";
-  b.textContent = !u ? "Peter's Launcher" : u.updateAvailable ? `Peter's Launcher: Update to ${u.latest}` : "Peter's Launcher: Up to date";
+  label(b, "Peter's Launcher", !u ? undefined : u.updateAvailable ? `Update to ${u.latest}` : "Up to date");
   b.title = u ? `This launcher: ${u.current}${u.latest ? `, newest release ${u.latest}` : ", no release published yet"}. Opens the releases page.` : "Open the launcher's releases page";
   b.onclick = () => import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url)).catch(() => window.open(url, "_blank", "noopener"));
 }

@@ -76,8 +76,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .bar>.status{flex-shrink:1;min-width:110px;max-width:280px}
 #statusText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 @media (max-width:1080px){.bar .verlink,#previewPill{display:none}}
-/* Narrow windows: "Up to date" gives way, so Stop at the right edge stays visible. */
-@media (max-width:1280px){#selfUpd.ok{display:none}}
 @media (max-width:960px){.nav a{padding:6px 8px}}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;margin-right:10px;letter-spacing:-.01em}
 .brand{margin-right:2px;color:inherit;text-decoration:none}
@@ -90,6 +88,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .upd.new{background:var(--accent-soft);color:var(--accent-text);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 .upd.new::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
 .upd.ok{border-color:transparent;background:transparent;color:var(--fg-3)}
+/* Two lines: program name above, its state below. */
+.upd-txt{display:grid;line-height:1.15;text-align:left;font-size:11.5px}
+.upd-txt b{font-weight:600}
+.upd:has(.upd-txt){padding-top:2px;padding-bottom:2px}
 .notes{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px 14px;font-size:13px;color:var(--fg-2)}
 .notes ul{margin:6px 0 0;padding-left:18px}
 .nav a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--fg-2);font-size:14px;font-weight:500;padding:6px 12px;border-radius:8px}
