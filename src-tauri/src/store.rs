@@ -86,6 +86,12 @@ pub struct Settings {
     pub include_prereleases: bool,
     /// Where downloads go; `None` = app data `models/`.
     pub models_dir: Option<PathBuf>,
+    /// Where KoboldCpp is installed; `None` = app data `bin/`.
+    pub koboldcpp_dir: Option<PathBuf>,
+    /// Where Esobold is installed; `None` = app data `bin-esobold/`.
+    pub esobold_dir: Option<PathBuf>,
+    /// Where presets (.kcpps) are kept; `None` = app data `presets/`.
+    pub presets_dir: Option<PathBuf>,
     /// Extra folders the library scans for .gguf files.
     pub library_folders: Vec<LibraryFolder>,
     /// Hugging Face sources, highest priority first.
@@ -120,6 +126,9 @@ impl Default for Settings {
             check_updates_on_start: true,
             include_prereleases: false,
             models_dir: None,
+            koboldcpp_dir: None,
+            esobold_dir: None,
+            presets_dir: None,
             library_folders: vec![],
             sources: crate::hf::default_sources(),
             sources_version: crate::hf::SOURCES_VERSION,
@@ -143,11 +152,16 @@ impl Settings {
     }
 
     pub fn load(path: &Path) -> Self {
-        let mut s: Self = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        std::fs::read_to_string(path).ok().and_then(|t| Self::parse(&t).ok()).unwrap_or_else(|| Self::parse("{}").expect("empty settings"))
+    }
+
+    /// Settings from JSON (a settings file or a backup), with older source lists brought up to date.
+    pub fn parse(text: &str) -> Result<Self, serde_json::Error> {
+        let mut s: Self = serde_json::from_str(text)?;
         s.sources = crate::hf::migrate_sources(std::mem::take(&mut s.sources));
         crate::hf::add_new_defaults(&mut s.sources, s.sources_version);
         s.sources_version = crate::hf::SOURCES_VERSION;
-        s
+        Ok(s)
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -157,6 +171,45 @@ impl Settings {
     pub fn models_dir(&self, dirs: &Dirs) -> PathBuf {
         self.models_dir.clone().unwrap_or_else(|| dirs.default_models())
     }
+    /// Install folder of KoboldCpp or Esobold.
+    pub fn bin_dir(&self, dirs: &Dirs, flavor: crate::binary::Flavor) -> PathBuf {
+        let own = match flavor {
+            crate::binary::Flavor::KoboldCpp => &self.koboldcpp_dir,
+            crate::binary::Flavor::Esobold => &self.esobold_dir,
+        };
+        own.clone().unwrap_or_else(|| dirs.bin_of(flavor))
+    }
+    /// Every folder a KoboldCpp or Esobold of ours may run from: both install folders and the
+    /// folders of the recorded programs (an install from before a folder change stays usable).
+    pub fn all_bin_dirs(&self, dirs: &Dirs) -> Vec<PathBuf> {
+        let mut out = vec![self.bin_dir(dirs, crate::binary::Flavor::KoboldCpp), self.bin_dir(dirs, crate::binary::Flavor::Esobold), dirs.bin(), dirs.bin_esobold()];
+        for b in [&self.binary, &self.esobold_binary].into_iter().flatten() {
+            // `<bin dir>/<tag>/<program>`: the bin dir is two levels up.
+            if let Some(d) = b.path.parent().and_then(Path::parent) {
+                out.push(d.to_path_buf());
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+    pub fn presets_dir(&self, dirs: &Dirs) -> PathBuf {
+        self.presets_dir.clone().unwrap_or_else(|| dirs.presets())
+    }
+}
+
+/// Name of the file in the default data folder that points to a data folder elsewhere
+/// (Advanced setup › Launcher Setup). Absent: the default folder is used.
+pub const LOCATION_FILE: &str = "data-location.txt";
+
+/// The launcher's data folder: the default one, or where `data-location.txt` in it points
+/// (if that folder exists).
+pub fn resolve_root(default_root: &Path) -> PathBuf {
+    std::fs::read_to_string(default_root.join(LOCATION_FILE))
+        .ok()
+        .map(|t| PathBuf::from(t.trim()))
+        .filter(|p| p.is_absolute() && p.is_dir())
+        .unwrap_or_else(|| default_root.to_path_buf())
 }
 
 /// Write via a temp file and rename, so readers never see half a file.

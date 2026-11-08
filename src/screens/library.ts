@@ -10,12 +10,21 @@ import { openSources } from "../dialogs/sources";
 
 /** Search results left out because their uploader's source is off. */
 const hiddenCount = (r: PopularResult) => (r.hidden ?? []).reduce((a, [, n]) => a + n, 0);
+/** What the search left out (too big, sources off), with "Show all" to bring it back. */
 function hiddenNote(r: PopularResult) {
   const list = (r.hidden ?? []).slice(0, 4).map(([a, n]) => `${a} ${n}`).join(", ") + ((r.hidden ?? []).length > 4 ? ", …" : "");
   const n = hiddenCount(r);
+  const parts = [
+    r.tooBig ? (search.showAll ? `${r.tooBig} too big for this PC, shown last` : `${r.tooBig} too big for this PC, hidden`) : "",
+    n ? `${n} result${n > 1 ? "s" : ""} from sources that are off: ${list}` : "",
+  ].filter(Boolean);
+  const box = h("label", { class: "chk", for: "hfShowAll", style: "padding:0;flex-shrink:0", title: "Also show models from sources that are off and models too big for this PC" },
+    checkbox("hfShowAll", search.showAll, (v) => { search.showAll = v; search.result = null; renderLibGrid(); runSearch(); }), "Show all");
   return h("div", { class: "foot" },
-    h("span", {}, `${n} result${n > 1 ? "s" : ""} from sources that are off: ${list}`),
-    h("button", { class: "linkbtn", onclick: openSources }, "Model Sources"));
+    h("span", {}, parts.join(" · ") || "Showing everything, also from sources that are off"),
+    h("span", { style: "display:inline-flex;gap:12px;align-items:center" },
+      box,
+      n ? h("button", { class: "linkbtn", onclick: openSources }, "Model Sources") : null));
 }
 
 const KINDS = ["Text", "Vision", "Image", "Speech", "Embedding"] as const;
@@ -27,7 +36,8 @@ let view: LibraryView | null = null;
 let loading = false;
 let fits: Record<string, LocalFit> = {};
 let fitKey = "";
-let search: { q: string; result: PopularResult | null; error: string; seq: number; sources: string } = { q: "", result: null, error: "", seq: 0, sources: "" };
+/** showAll: also results from sources that are off and models too big for this PC. */
+let search: { q: string; result: PopularResult | null; error: string; seq: number; sources: string; showAll: boolean } = { q: "", result: null, error: "", seq: 0, sources: "", showAll: false };
 /** Which sources are on: results depend on it, so a change in Model Sources searches again. */
 const sourcesKey = () => S.sources.filter((s) => s.on).map((s) => s.name).join(",");
 let searchTimer: number | undefined;
@@ -324,7 +334,7 @@ async function runSearch() {
   search.sources = sourcesKey();
   if (search.result === null) renderLibGrid();
   try {
-    const r = await api.search(q, machine());
+    const r = await api.search(q, machine(), search.showAll);
     if (seq !== search.seq) return;
     search.result = r;
   } catch (e) {
@@ -360,8 +370,7 @@ function renderLibGrid() {
         ? (typing ? h("div", { class: "empty" }, "Searching…") : h("div", { class: "empty" }, "Type a model name to search."))
         : search.error ? h("div", { class: "empty" }, search.error)
         : r.items.length ? list : h("div", { class: "empty" }, r.tooBig ? "Nothing that fits this PC." : hiddenCount(r) ? "Nothing from your active sources." : "No GGUF models found."),
-      ...(r?.tooBig ? [h("div", { class: "foot" }, h("span", {}, `${r.tooBig} too big for this PC, hidden`))] : []),
-      ...(r && hiddenCount(r) ? [hiddenNote(r)] : []));
+      ...(r && (r.tooBig || hiddenCount(r) || search.showAll) ? [hiddenNote(r)] : []));
     return;
   }
 
@@ -376,7 +385,7 @@ function renderLibGrid() {
     (!L.types.size || L.types.has(m.kind)) &&
     (!L.fams.size || L.fams.has(family(m))) &&
     (!L.drives.size || (m.drive && L.drives.has(m.drive))) &&
-    (!qq || (m.name + m.file).toLowerCase().includes(qq)) &&
+    (!qq || (m.name + m.file + (m.reportedName ?? "")).toLowerCase().includes(qq)) &&
     (!L.runsOnly || runStatus(m, fits[m.path]).start === "yes"));
   const total = items.reduce((a, m) => a + m.size, 0);
   sortModels(items);
@@ -415,7 +424,8 @@ function renderLibGrid() {
     grid.append(h("article", { class: "card" + (st.level === "bad" ? " cant-run" : "") },
       h("div", { class: "top" }, h("span", { class: `mono-badge fam-${famClass(m)}`, style: "width:30px;height:30px;font-size:12px" }, m.name.slice(0, 2)),
         h("span", { class: `pill ${st.level === "ok" ? "p-ok" : st.level === "warn" ? "p-warn" : "p-bad"}`, title: st.detail }, st.label)),
-      h("h4", {}, m.name),
+      h("h4", { title: m.file }, m.name),
+      m.reportedName ? h("div", { class: "reported", title: "The name the model file reports" }, m.reportedName) : null,
       h("div", { class: "tags" }, [m.sizeLabel, m.quant, m.architecture, m.parts > 1 ? `${m.parts} parts` : null].filter(Boolean).join(" · ")),
       kv("Type", KIND_LABEL[m.kind] + (m.format === "mlx" ? " (MLX)" : m.format === "safetensors" ? " (safetensors)" : "")), kv("Size", fmtBytes(m.size)),
       m.format === "gguf" ? h("div", { class: "kv", title: "Memory needed while running at 16K context: weights, vision file (if on) and context cache. On a PC with a graphics card this is mostly graphics memory." },

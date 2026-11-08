@@ -23,6 +23,8 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 
 pub struct AppState {
     pub dirs: Dirs,
+    /// The system's app data folder. Holds `data-location.txt` when `dirs.root` is elsewhere.
+    pub default_root: PathBuf,
     pub settings: Mutex<Settings>,
     pub server: ServerManager,
     pub http: reqwest::Client,
@@ -35,19 +37,19 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(root: PathBuf) -> Self {
+    pub fn new(root: PathBuf, default_root: PathBuf) -> Self {
         let dirs = Dirs::new(root);
         let _ = dirs.ensure();
         let mut settings = Settings::load(&dirs.settings_file());
         // A KoboldCpp in bin/ that settings don't know about (e.g. lost record): use the newest.
         if settings.binary.as_ref().is_none_or(|b| !b.path.is_file())
-            && let Some(found) = binary::find_installed(&dirs.bin())
+            && let Some(found) = binary::find_installed(&settings.bin_dir(&dirs, binary::Flavor::KoboldCpp))
         {
             settings.binary = Some(found);
             let _ = settings.save(&dirs.settings_file());
         }
         if settings.esobold_binary.as_ref().is_none_or(|b| !b.path.is_file())
-            && let Some(found) = binary::find_installed(&dirs.bin_esobold())
+            && let Some(found) = binary::find_installed(&settings.bin_dir(&dirs, binary::Flavor::Esobold))
         {
             settings.esobold_binary = Some(found);
             let _ = settings.save(&dirs.settings_file());
@@ -58,6 +60,7 @@ impl AppState {
         server.set_log_path(dirs.logs().join("koboldcpp.log"));
         Self {
             dirs,
+            default_root,
             settings: Mutex::new(settings),
             server,
             http: download::client(),
@@ -141,7 +144,8 @@ pub struct Paths {
 
 #[tauri::command]
 pub fn app_paths(state: State<'_, AppState>) -> Paths {
-    Paths { data: state.dirs.root.clone(), models: state.settings().models_dir(&state.dirs), presets: state.dirs.presets(), logs: state.dirs.logs() }
+    let s = state.settings();
+    Paths { data: state.dirs.root.clone(), models: s.models_dir(&state.dirs), presets: s.presets_dir(&state.dirs), logs: state.dirs.logs() }
 }
 
 #[tauri::command]
@@ -276,7 +280,8 @@ pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Opt
     *state.binary_cancel.lock().map_err(err)? = Some(cancel.clone());
     let app2 = app.clone();
     crate::applog!("installing {} {} ({asset})", flavor.name(), release.tag_name);
-    let installed = binary::install(&state.http, &release, asset, &state.dirs.bin_of(flavor), &cancel, move |p| {
+    let bin_dir = s.bin_dir(&state.dirs, flavor);
+    let installed = binary::install(&state.http, &release, asset, &bin_dir, &cancel, move |p| {
         let _ = app2.emit("binary-progress", p);
     })
     .await
@@ -297,7 +302,7 @@ pub async fn install_binary(app: AppHandle, state: State<'_, AppState>, tag: Opt
         binary::Flavor::KoboldCpp => s.binary = Some(installed.clone()),
         binary::Flavor::Esobold => s.esobold_binary = Some(installed.clone()),
     })?;
-    binary::prune_old(&state.dirs.bin_of(flavor), &installed.path);
+    binary::prune_old(&bin_dir, &installed.path);
     if was_running && let Some(cfg) = state.last_run.lock().map_err(err)?.clone() {
         start(&app, &state, cfg)?;
     }
@@ -388,8 +393,8 @@ fn start(app: &AppHandle, state: &AppState, mut cfg: Kcpps) -> CmdResult<u16> {
     cfg.save(&path).map_err(err)?;
     crate::applog!("start {} with {} (model {}, port {port})", bin.path.display(), path.display(), cfg.model().unwrap_or_else(|| "-".into()));
     if !crate::server::port_free(port) {
-        for f in [binary::Flavor::KoboldCpp, binary::Flavor::Esobold] {
-            crate::server::reclaim_port(port, &state.dirs.bin_of(f));
+        for d in s.all_bin_dirs(&state.dirs) {
+            crate::server::reclaim_port(port, &d);
         }
     }
     let app2 = app.clone();
@@ -582,15 +587,23 @@ async fn mtp_for(h: &crate::hf::client::Hf<'_>, f: &crate::hf::RepoFiles, repo: 
 }
 
 /// Pick a quant for each candidate (in order) until `want` fit; counts the ones too big.
-async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, speeds: &std::collections::HashMap<String, f64>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize) -> (Vec<PopularItem>, usize) {
+/// `keep_too_big`: list models that don't fit too (with their smallest quant, fit "none").
+async fn with_picks(h: &crate::hf::client::Hf<'_>, models: &std::path::Path, speeds: &std::collections::HashMap<String, f64>, cands: Vec<crate::hf::Ranked>, machine: &Machine, want: usize, keep_too_big: bool) -> (Vec<PopularItem>, usize) {
     let files = futures_util::future::join_all(cands.iter().map(|m| h.files(&m.id))).await;
     let mut items: Vec<(PopularItem, crate::hf::RepoFiles)> = Vec::new();
     let mut too_big = 0;
     for (m, f) in cands.into_iter().zip(files) {
         let Ok(f) = f else { continue };
-        let Some(pick) = fit::pick_quant(&f.sizes(), machine.context, machine.vram, machine.ram, machine.unified) else {
-            too_big += 1;
-            continue;
+        let pick = match fit::pick_quant(&f.sizes(), machine.context, machine.vram, machine.ram, machine.unified) {
+            Some(p) => p,
+            None => {
+                too_big += 1;
+                let smallest = f.sizes().into_iter().filter(|(_, s)| *s > 0).min_by_key(|(_, s)| *s);
+                match smallest {
+                    Some((quant, size)) if keep_too_big => fit::QuantPick { quant, size, fit: fit::Fit::None, fallback: false },
+                    _ => continue,
+                }
+            }
         };
         let Some(q) = f.quant(&pick.quant) else { continue };
         let urls: Vec<String> = q.files.iter().map(|p| crate::hf::resolve_url(&m.id, p)).collect();
@@ -634,7 +647,7 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
         let (entries, errors) = gather(&h, &sources, f.terms, options.sort).await;
         let ranked = crate::hf::rank(&entries, &sources, options, now);
         let cands: Vec<_> = ranked.items.into_iter().filter(|m| m.family.as_deref() == Some(fam.as_str())).take(30).collect();
-        let (items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 20).await;
+        let (items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 20, false).await;
         return Ok(PopularResult { items, too_big, dupes: ranked.dupes, errors, hidden: vec![] });
     }
     let maker_on = |m: &str| sources.iter().any(|s| s.on && s.name.eq_ignore_ascii_case(m));
@@ -650,7 +663,7 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
             // The maker's own uploads first (in the chosen order), quants of its models after.
             cands.sort_by_key(|m| m.kind != crate::hf::Kind::Official);
             cands.truncate(12);
-            let (items, _) = with_picks(h, models, speeds, cands, machine, 1).await;
+            let (items, _) = with_picks(h, models, speeds, cands, machine, 1, false).await;
             (items, errors)
         }
     });
@@ -667,7 +680,9 @@ pub async fn popular_models(state: State<'_, AppState>, options: crate::hf::Rank
 
 /// Hugging Face search, answered like the popular list: best fitting quant, speed, options.
 #[tauri::command]
-pub async fn search_models(state: State<'_, AppState>, query: String, machine: Machine) -> CmdResult<PopularResult> {
+/// `show_all`: also models from sources that are off and models too big for this PC.
+pub async fn search_models(state: State<'_, AppState>, query: String, machine: Machine, show_all: Option<bool>) -> CmdResult<PopularResult> {
+    let show_all = show_all.unwrap_or(false);
     let h = hf(&state);
     let models = state.settings().models_dir(&state.dirs);
     let speeds = state.settings().speeds;
@@ -676,7 +691,7 @@ pub async fn search_models(state: State<'_, AppState>, query: String, machine: M
     let entries = h.search(&query, 100).await.map_err(err)?;
     let now = now_unix();
     // Search follows the sources: only uploaders whose source is on (the makers count as sources).
-    let on = |author: &str| sources.iter().any(|s| s.on && s.comps.is_some() && s.name.eq_ignore_ascii_case(author));
+    let on = |author: &str| show_all || sources.iter().any(|s| s.on && s.comps.is_some() && s.name.eq_ignore_ascii_case(author));
     let text: Vec<&crate::hf::ModelEntry> = entries.iter().filter(|e| crate::hf::is_text_model(e)).collect();
     let mut hidden: Vec<(String, usize)> = Vec::new();
     for e in text.iter().filter(|e| !on(e.author())) {
@@ -711,9 +726,10 @@ pub async fn search_models(state: State<'_, AppState>, query: String, machine: M
             }
         })
         .collect();
-    let (mut items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, 30).await;
+    let (mut items, too_big) = with_picks(&h, &models, &speeds, cands, &machine, if show_all { 60 } else { 30 }, show_all).await;
     // with_picks prefers normal quants over fallbacks; keep the search order (downloads) otherwise.
-    items.sort_by(|a, b| a.pick.fallback.cmp(&b.pick.fallback).then(b.model.downloads.cmp(&a.model.downloads)));
+    // Models that don't fit go last.
+    items.sort_by(|a, b| (a.pick.fit == fit::Fit::None).cmp(&(b.pick.fit == fit::Fit::None)).then(a.pick.fallback.cmp(&b.pick.fallback)).then(b.model.downloads.cmp(&a.model.downloads)));
     Ok(PopularResult { items, too_big, dupes: 0, errors: vec![], hidden })
 }
 
@@ -931,12 +947,12 @@ fn preset_path(state: &AppState, name: &str) -> CmdResult<PathBuf> {
     if clean.is_empty() || clean.starts_with('.') {
         return Err("Give the preset a name".into());
     }
-    Ok(state.dirs.presets().join(format!("{clean}.kcpps")))
+    Ok(state.settings().presets_dir(&state.dirs).join(format!("{clean}.kcpps")))
 }
 
 #[tauri::command]
 pub fn list_presets(state: State<'_, AppState>) -> Vec<PresetInfo> {
-    let mut out: Vec<PresetInfo> = std::fs::read_dir(state.dirs.presets())
+    let mut out: Vec<PresetInfo> = std::fs::read_dir(state.settings().presets_dir(&state.dirs))
         .into_iter()
         .flatten()
         .flatten()
@@ -968,7 +984,7 @@ pub fn delete_preset(state: State<'_, AppState>, name: String) -> CmdResult<()> 
 /// Load one of the user's presets (only files in the presets folder).
 #[tauri::command]
 pub fn load_config(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Map<String, Value>> {
-    let dir = state.dirs.presets().canonicalize().map_err(err)?;
+    let dir = state.settings().presets_dir(&state.dirs).canonicalize().map_err(err)?;
     let p = path.canonicalize().map_err(err)?;
     if !p.starts_with(&dir) {
         return Err("Not a preset".into());
@@ -1087,4 +1103,195 @@ pub fn fit_local(state: State<'_, AppState>, items: Vec<LocalFitInput>, machine:
             }
         })
         .collect()
+}
+
+/* ---------- launcher setup: folders, backup ---------- */
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupPath {
+    pub path: PathBuf,
+    pub default: PathBuf,
+}
+
+/// Where the launcher keeps things (Advanced setup › Launcher Setup).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherSetup {
+    pub koboldcpp: SetupPath,
+    pub esobold: SetupPath,
+    pub models: SetupPath,
+    pub presets: SetupPath,
+    pub data: SetupPath,
+    /// The data folder chosen for the next start, when it differs from the current one.
+    pub data_pending: Option<PathBuf>,
+}
+
+fn setup_view(state: &AppState) -> LauncherSetup {
+    let s = state.settings();
+    let d = &state.dirs;
+    let sp = |path: PathBuf, default: PathBuf| SetupPath { path, default };
+    let next = crate::store::resolve_root(&state.default_root);
+    LauncherSetup {
+        koboldcpp: sp(s.bin_dir(d, binary::Flavor::KoboldCpp), d.bin()),
+        esobold: sp(s.bin_dir(d, binary::Flavor::Esobold), d.bin_esobold()),
+        models: sp(s.models_dir(d), d.default_models()),
+        presets: sp(s.presets_dir(d), d.presets()),
+        data: sp(d.root.clone(), state.default_root.clone()),
+        data_pending: (next != d.root).then_some(next),
+    }
+}
+
+#[tauri::command]
+pub fn launcher_setup(state: State<'_, AppState>) -> LauncherSetup {
+    setup_view(&state)
+}
+
+/// A folder the launcher may use: absolute, created if missing, writable.
+fn usable_dir(p: &std::path::Path) -> CmdResult<()> {
+    if !p.is_absolute() {
+        return Err("Choose a full folder path".into());
+    }
+    std::fs::create_dir_all(p).map_err(|e| format!("Can't create {}: {e}", p.display()))?;
+    let probe = p.join(".kl-write-test");
+    std::fs::write(&probe, b"").map_err(|e| format!("Can't write to {}: {e}", p.display()))?;
+    let _ = std::fs::remove_file(probe);
+    Ok(())
+}
+
+/// Change one of the launcher's folders (`path: None` = back to the default).
+/// kind: "koboldcpp", "esobold", "models", "presets" or "data" (the data folder applies after a
+/// restart). Nothing already there is lost: installed programs keep running from where they are,
+/// the old models folder stays in the library, presets are copied over.
+#[tauri::command]
+pub fn set_launcher_path(state: State<'_, AppState>, kind: String, path: Option<PathBuf>) -> CmdResult<LauncherSetup> {
+    let view = setup_view(&state);
+    let cur = match kind.as_str() {
+        "koboldcpp" => &view.koboldcpp,
+        "esobold" => &view.esobold,
+        "models" => &view.models,
+        "presets" => &view.presets,
+        "data" => &view.data,
+        _ => return Err("Unknown folder".into()),
+    };
+    let new = path.unwrap_or_else(|| cur.default.clone());
+    usable_dir(&new)?;
+    let own = (new != cur.default).then(|| new.clone());
+    crate::applog!("folder for {kind}: {}", new.display());
+    match kind.as_str() {
+        "koboldcpp" => {
+            state.update_settings(|s| s.koboldcpp_dir = own)?;
+        }
+        "esobold" => {
+            state.update_settings(|s| s.esobold_dir = own)?;
+        }
+        "models" => {
+            let old = cur.path.clone();
+            let had_models = std::fs::read_dir(&old).is_ok_and(|mut r| r.next().is_some());
+            state.update_settings(|s| {
+                s.models_dir = own;
+                // Models downloaded so far stay in the library.
+                if had_models && old != new && !s.library_folders.iter().any(|f| f.path == old) {
+                    s.library_folders.push(crate::store::LibraryFolder { path: old, recursive: true });
+                }
+                s.library_folders.retain(|f| f.path != new);
+            })?;
+        }
+        "presets" => {
+            for e in std::fs::read_dir(&cur.path).into_iter().flatten().flatten() {
+                let p = e.path();
+                let dest = new.join(e.file_name());
+                if p.is_file() && p.extension().is_some_and(|x| x == "kcpps" || x == "kcppt") && !dest.exists() {
+                    std::fs::copy(&p, &dest).map_err(err)?;
+                }
+            }
+            state.update_settings(|s| s.presets_dir = own)?;
+        }
+        _ => {
+            // The data folder: the current settings go along, with every folder that still
+            // follows the old data folder pinned to where it is now.
+            let mut s = state.settings();
+            let d = &state.dirs;
+            s.koboldcpp_dir.get_or_insert_with(|| d.bin());
+            s.esobold_dir.get_or_insert_with(|| d.bin_esobold());
+            s.models_dir.get_or_insert_with(|| d.default_models());
+            s.presets_dir.get_or_insert_with(|| d.presets());
+            let file = new.join("settings.json");
+            if file.is_file() && new != d.root {
+                let _ = std::fs::copy(&file, new.join("settings.json.bak"));
+            }
+            if new != d.root {
+                s.save(&file).map_err(err)?;
+            }
+            let loc = state.default_root.join(crate::store::LOCATION_FILE);
+            if new == state.default_root {
+                let _ = std::fs::remove_file(&loc);
+            } else {
+                crate::store::write_atomic(&loc, new.to_string_lossy().as_bytes()).map_err(err)?;
+            }
+        }
+    }
+    Ok(setup_view(&state))
+}
+
+/// Save all launcher settings (sources, folders, library, modes) as a JSON backup.
+#[tauri::command]
+pub fn export_launcher_config(state: State<'_, AppState>, path: PathBuf) -> CmdResult<()> {
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
+        return Err("Save the backup as a .json file".into());
+    }
+    let out = serde_json::json!({
+        "kind": "koboldcpp-launcher-config",
+        "launcherVersion": env!("CARGO_PKG_VERSION"),
+        "settings": state.settings(),
+    });
+    crate::store::write_atomic(&path, serde_json::to_string_pretty(&out).map_err(err)?.as_bytes()).map_err(err)?;
+    crate::applog!("launcher config saved to {}", path.display());
+    Ok(())
+}
+
+/// Load a backup made with `export_launcher_config`. Program paths are only taken over if the
+/// file is there and is called KoboldCpp/Esobold; folders only if they are full paths.
+#[tauri::command]
+pub fn import_launcher_config(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Settings> {
+    if std::fs::metadata(&path).map_err(err)?.len() > 8 << 20 {
+        return Err("That file is too big for a launcher backup".into());
+    }
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).map_err(err)?).map_err(|e| format!("Not a launcher backup: {e}"))?;
+    let inner = match v.get("kind").and_then(Value::as_str) {
+        Some("koboldcpp-launcher-config") => v.get("settings").cloned().ok_or("Not a launcher backup")?,
+        _ if v.get("sources").is_some() => v,
+        _ => return Err("Not a launcher backup".into()),
+    };
+    let mut new = Settings::parse(&inner.to_string()).map_err(|e| format!("Not a launcher backup: {e}"))?;
+    let cur = state.settings();
+    if new.esobold != cur.esobold && state.server.is_active() {
+        return Err("Stop the running model first: the backup switches Esobold mode".into());
+    }
+    let program_ok = |b: &Option<InstalledBinary>| {
+        b.as_ref().is_some_and(|b| b.path.is_file() && b.path.file_name().is_some_and(|n| {
+            let n = n.to_string_lossy().to_ascii_lowercase();
+            n.contains("koboldcpp") || n.contains("esobold")
+        }))
+    };
+    if !program_ok(&new.binary) {
+        new.binary = cur.binary.clone();
+    }
+    if !program_ok(&new.esobold_binary) {
+        new.esobold_binary = cur.esobold_binary.clone();
+    }
+    for d in [&mut new.koboldcpp_dir, &mut new.esobold_dir, &mut new.models_dir, &mut new.presets_dir] {
+        if d.as_ref().is_some_and(|p| !p.is_absolute()) {
+            *d = None;
+        }
+    }
+    new.library_folders.retain(|f| f.path.is_absolute());
+    new.sources.retain(|x| x.builtin || crate::hf::valid_source_name(&x.name));
+    for d in crate::hf::default_sources().into_iter().filter(|d| d.builtin) {
+        if !new.sources.iter().any(|s| s.id == d.id) {
+            new.sources.insert(0, d);
+        }
+    }
+    crate::applog!("launcher config loaded from {}", path.display());
+    state.update_settings(|s| *s = new)
 }

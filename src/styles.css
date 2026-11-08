@@ -76,6 +76,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .bar>.status{flex-shrink:1;min-width:110px;max-width:280px}
 #statusText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 @media (max-width:1080px){.bar .verlink,#previewPill{display:none}}
+/* Narrow windows: "Up to date" gives way, so Stop at the right edge stays visible. */
+@media (max-width:1280px){#selfUpd.ok{display:none}}
 @media (max-width:960px){.nav a{padding:6px 8px}}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;margin-right:10px;letter-spacing:-.01em}
 .brand{margin-right:2px;color:inherit;text-decoration:none}
@@ -138,6 +140,38 @@ h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-3
 .parts span{font-size:12px;padding:2px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line);color:var(--fg-2)}
 .meta{font-size:12.5px;color:var(--fg-2)}
 .go{display:flex;gap:8px;align-items:center}
+/* "Get and start" (2/3) next to "Get" (1/3, download only). */
+.split-go{display:grid;grid-template-columns:2fr 1fr;gap:6px;min-width:190px}
+.split-go>button{white-space:nowrap}
+button.get-only{background:#fff;border-color:var(--line-2);color:#1b1f2a}
+button.get-only:hover{background:#f6f7fa}
+:root[data-theme="lite"] button.get-only,:root[data-theme="eso"] button.get-only{background:var(--win);border-color:var(--line-2);color:var(--fg)}
+/* Download indicator in the top bar: a progress ring with the number of downloads. */
+.dlwrap{position:relative;display:inline-flex}
+.dlbtn{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:4px 10px 4px 6px;font-size:12.5px;color:var(--accent-text)}
+.dlbtn svg{width:20px;height:20px;transform:rotate(-90deg)}
+.dlbtn circle{fill:none;stroke-width:3}
+.dlbtn .ring-track{stroke:var(--line)}
+.dlbtn .ring-fill{stroke:var(--accent);stroke-dasharray:50.27;stroke-dashoffset:50.27;stroke-linecap:round;transition:stroke-dashoffset .3s}
+.dlmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;width:340px;max-height:60vh;overflow:auto;background:var(--win);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;white-space:normal}
+.dl-head{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-3);font-weight:600;padding:6px 8px 4px}
+.dl-item{display:grid;gap:4px;padding:8px;border-top:1px solid var(--line)}
+.dl-item:first-of-type{border-top:none}
+.dl-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px}
+.dl-top b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-top button{padding:2px 8px}
+.dl-file{font-size:11.5px;color:var(--fg-3);overflow-wrap:anywhere}
+.dl-item small{font-size:11.5px;color:var(--fg-3)}
+/* Stop at the very top right while the server runs. */
+.stopbtn{border-radius:20px;padding:4px 14px;font-size:13px;background:#fff;color:var(--bad);border:1px solid var(--bad)}
+.stopbtn:hover{background:var(--bad-soft)}
+:root[data-theme="lite"] .stopbtn,:root[data-theme="eso"] .stopbtn{background:var(--win);color:var(--bad);border-color:var(--bad)}
+/* Library card: name from the file, the model's own name below it. */
+.card .reported{font-size:12px;color:var(--fg-3);margin-top:-6px}
+/* Advanced setup › Launcher Setup */
+.pathrow{display:flex;gap:6px;align-items:center;min-width:0;flex:1;justify-content:flex-end}
+.pathrow input{flex:1;min-width:160px;border:1px solid var(--line-2);border-radius:8px;padding:5px 9px;background:var(--win);font:12px var(--f-mono)}
+.grp .r.path>div:first-child{flex:0 0 210px}
 .prog{display:grid;gap:4px} .prog small{font-size:11.5px;color:var(--fg-3)}
 .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .sec-head p{margin:2px 0 0;font-size:13px;color:var(--fg-2)}
@@ -306,9 +340,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 :root[data-theme="eso"] .nav a[aria-current="page"]{background:#244752;color:#fff}
 
 /* The way to Esobold: a small warning pill at the end of the Advanced menu. */
-.snav button.eso-nav{margin-top:12px;justify-self:start;padding:5px 12px;border:1px solid color-mix(in srgb,var(--warn) 55%,transparent)!important;border-radius:20px;background:var(--warn-soft)!important;color:var(--warn)!important;font-size:13px}
-.snav button.eso-nav[aria-current="true"]{box-shadow:0 0 0 1px var(--warn)}
-:root[data-eso="on"] .snav button.eso-nav{border-color:#90f7fa!important;background:#002b36!important;color:#90f7fa!important}
+.snav button.eso-nav{margin-top:12px;justify-self:start;padding:5px 12px;border:1px solid #4b7b8a!important;border-radius:20px;background:#002b36!important;color:#90f7fa!important;font-size:13px}
+.snav button.eso-nav:hover{background:#244752!important}
+.snav button.eso-nav[aria-current="true"]{box-shadow:0 0 0 1px #90f7fa;border-color:#90f7fa!important}
 .eso-page{display:grid;gap:14px;max-width:720px}
 .eso-warn{border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:var(--warn-soft);border-radius:12px;padding:2px 16px;color:var(--fg)}
 .eso-label{font-size:14px;color:var(--fg-2)}

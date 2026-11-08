@@ -25,8 +25,15 @@
         <button class="upd ok" id="selfUpd" title="Peter's Launcher on GitHub"></button>
         <button class="upd" id="updBtn"></button>
         <button class="pillbtn" id="openSources">Model Sources</button>
+        <span class="dlwrap">
+          <button class="dlbtn" id="dlBtn" hidden aria-haspopup="true" aria-expanded="false" aria-controls="dlMenu"
+            ><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-track" cx="10" cy="10" r="8" /><circle class="ring-fill" cx="10" cy="10" r="8" /></svg
+            ><span class="dl-n">0</span></button>
+          <div class="dlmenu" id="dlMenu" hidden></div>
+        </span>
         <button class="litebtn" id="liteBtn" hidden title="Open KoboldAI Lite in your browser">Open Lite</button>
         <span class="status" id="status"><span class="dot"></span><span id="statusText">Server stopped</span></span>
+        <button class="stopbtn" id="stopBtn" hidden title="Stop the server">Stop</button>
       </header>
       <main class="screen" id="screen"></main>
     </div>

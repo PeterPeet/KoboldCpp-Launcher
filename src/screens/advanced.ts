@@ -1,7 +1,7 @@
 // Advanced setup: every control edits the launch config (`S.cfg`), which is what KoboldCpp gets.
 // The command line below is generated from the same config by the Rust side.
 
-import { api, fmtBytes, inTauri, type ArgSpec, type Gpu, type Kcpps, type LocalModel, type PresetInfo } from "../api";
+import { api, fmtBytes, inTauri, type ArgSpec, type Gpu, type Kcpps, type LauncherSetup, type LocalModel, type PresetInfo, type SetupKind } from "../api";
 import { $, checkbox, h, select, toggle, toast, type Kid } from "../dom";
 import { isActive, launch, stop } from "../server";
 import { refreshBinary, reveal } from "../dialogs/update";
@@ -18,12 +18,13 @@ const ICONS: Record<string, string> = {
   network: "M12 3v6 M5 15v-3h14v3 M3 15h4v6H3z M10 15h4v6h-4z M17 15h4v6h-4z",
   presets: "M6 3h12v18l-6-4-6 4z",
   logs: "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+  setup: "M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z M12 11v5 M9.5 13.5L12 16l2.5-2.5",
   appearance: "M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.5 0-.9-.6-1.3-.6-2 0-.8.6-1.5 1.5-1.5H17a4 4 0 004-4c0-5-4-9-9-9z M7.5 11.5h.01 M10 7.5h.01 M14 7.5h.01 M16.5 11h.01",
 };
 const PAGES: [string, string][] = [
   ["presets", "KoboldCpp Presets"], ["model", "Model"], ["hardware", "Hardware"], ["context", "Context and memory"],
   ["images", "Images"], ["voice", "Voice and audio"], ["network", "Network"],
-  ["appearance", "Launcher Appearance"], ["logs", "Logs"], ["esobold", "Esobold"],
+  ["appearance", "Launcher Appearance"], ["setup", "Launcher Setup"], ["logs", "Logs"], ["esobold", "Esobold"],
 ];
 
 /* ---------- config state ---------- */
@@ -503,6 +504,121 @@ function appearancePage(pane: HTMLElement) {
       choice("lite", "KoboldAI Lite", "Lite's default color scheme (Modern)", "#32496d", "#0b141a", "#415577")));
 }
 
+/* ---------- launcher setup: folders, backup ---------- */
+
+let setup: LauncherSetup | null = null;
+let setupError = "";
+
+async function loadSetup() {
+  try {
+    setup = await api.launcherSetup();
+    setupError = "";
+  } catch (e) {
+    setupError = String(e);
+  }
+  render();
+}
+
+async function changePath(kind: SetupKind, path: string | null) {
+  try {
+    setup = await api.setLauncherPath(kind, path);
+    S.settings = await api.settings();
+    presets = null;
+    toast(kind === "data" ? "Data folder saved. It applies when you restart the launcher." : path === null ? "Back to the default folder" : "Folder changed");
+  } catch (e) {
+    toast(String(e));
+  }
+  render();
+}
+
+async function pickFolder(kind: SetupKind, cur: string) {
+  if (!inTauri) return toast("Choosing works in the desktop app");
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const p = await open({ directory: true, defaultPath: cur });
+  if (typeof p === "string") changePath(kind, p);
+}
+
+async function backupConfig() {
+  if (!inTauri) return toast("Backups work in the desktop app");
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const path = await save({ defaultPath: `launcher-config-${stamp}.json`, filters: [{ name: "Launcher config", extensions: ["json"] }] });
+  if (!path) return;
+  try {
+    await api.exportLauncherConfig(path);
+    toast("Launcher config saved");
+  } catch (e) {
+    toast(String(e));
+  }
+}
+
+async function restoreConfig() {
+  if (!inTauri) return toast("Backups work in the desktop app");
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const path = await open({ multiple: false, filters: [{ name: "Launcher config", extensions: ["json"] }] });
+  if (typeof path !== "string") return;
+  try {
+    const was = eso();
+    S.settings = await api.importLauncherConfig(path);
+    S.sources = S.settings.sources;
+    S.popularKey = "";
+    applyFlavor();
+    if (was !== eso()) enterAnimation(eso());
+    setup = null;
+    presets = null;
+    await refreshBinary(false);
+    toast("Launcher config loaded");
+  } catch (e) {
+    toast(String(e));
+  }
+  render();
+}
+
+function setupPage(pane: HTMLElement) {
+  if (!setup && !setupError) loadSetup();
+  pane.append(title("Launcher Setup"),
+    h("p", { class: "note", style: "margin:0" }, "Where the launcher keeps its files. Choose your own folders, for example on a bigger drive. Nothing already there is lost: installed programs keep working from where they are, the old models folder stays in the library, and presets are copied to the new folder."));
+  if (!setup) {
+    pane.append(h("div", { class: "empty" }, setupError ? `Could not read the folders: ${setupError}` : "Loading…"));
+    return;
+  }
+  const ROWS: [SetupKind, string, string][] = [
+    ["koboldcpp", "KoboldCpp", "Where KoboldCpp is installed and updated"],
+    ["esobold", "Esobold", "Where Esobold is installed (Esobold mode)"],
+    ["models", "Models", "Where downloaded models go"],
+    ["presets", "Configs", "Your saved presets (.kcpps)"],
+    ["data", "Launcher data", "Settings, logs and cache. Applies after a restart."],
+  ];
+  const grp = h("div", { class: "grp" });
+  for (const [kind, label, hint] of ROWS) {
+    const p = setup[kind];
+    const isDefault = p.path === p.default;
+    const input = h("input", { type: "text", id: `path-${kind}`, value: kind === "data" && setup.dataPending ? setup.dataPending : p.path, spellcheck: "false", "aria-label": `${label} folder`, title: p.path }) as HTMLInputElement;
+    // Show the end of the path (the folder's own name), not the start every path shares.
+    setTimeout(() => { if (document.activeElement !== input) input.scrollLeft = input.scrollWidth; });
+    input.addEventListener("change", () => {
+      const v = input.value.trim();
+      if (v && v !== p.path) changePath(kind, v);
+    });
+    const r = h("div", { class: "r path" },
+      h("div", {}, label, h("small", {}, kind === "data" && setup.dataPending ? `After a restart: ${setup.dataPending}. Now: ${p.path}` : hint)),
+      h("div", { class: "pathrow" },
+        input,
+        h("button", { onclick: () => pickFolder(kind, p.path) }, "Choose…"),
+        h("button", { class: "ghost", onclick: () => reveal(p.path), title: "Show in the file manager" }, "Open"),
+        h("button", { class: "ghost", disabled: isDefault && !(kind === "data" && setup.dataPending), onclick: () => changePath(kind, null), title: `Default: ${p.default}` }, "Default")));
+    grp.append(r);
+  }
+  pane.append(grp,
+    h("p", { class: "glabel" }, "Backup"),
+    h("div", { class: "grp" },
+      row("Backup Launcher Config", h("button", { onclick: backupConfig }, "Save as .json…"),
+        "Model sources, folders, library folders, Esobold mode and RAM setting in one file"),
+      row("Load Launcher Config", h("button", { onclick: restoreConfig }, "Load .json…"),
+        "Replaces the current launcher settings with a backup. Models and presets themselves are not in it.")));
+}
+
 /* ---------- screen ---------- */
 
 export function renderAdvanced() {
@@ -518,10 +634,10 @@ export function renderAdvanced() {
   const pane = h("section", { class: "pane" });
   root.append(pane);
 
-  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage, esobold: esoboldPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
+  ({ hardware: hardwarePage, context: contextPage, model: modelPage, images: imagesPage, voice: voicePage, network: networkPage, presets: presetsPage, logs: logsPage, appearance: appearancePage, setup: setupPage, esobold: esoboldPage } as Record<string, (p: HTMLElement) => void>)[A.page]?.(pane);
   // The log page is a viewer: no command line or start buttons below it.
   // In Esobold mode its options page ends with the command line and start buttons like the others.
-  if (A.page === "logs" || A.page === "appearance" || (A.page === "esobold" && !eso())) return root;
+  if (A.page === "logs" || A.page === "appearance" || A.page === "setup" || (A.page === "esobold" && !eso())) return root;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(cli); toast("Command copied"); }

@@ -47,7 +47,7 @@ async fn record_screenshot_data() {
         }
     }
     let app = tauri::test::mock_app();
-    app.manage(AppState::new(root.clone()));
+    app.manage(AppState::new(root.clone(), root.clone()));
     let st = || app.state::<AppState>();
 
     let mut out = Map::new();
@@ -127,7 +127,7 @@ async fn record_screenshot_data() {
     // Search isn't cached; when Hugging Face rate-limits (429), keep the last recorded answer.
     let mut search = Map::new();
     for q in ["gemma", "qwen", "mistral"] {
-        match c::search_models(st(), q.into(), machine()).await {
+        match c::search_models(st(), q.into(), machine(), None).await {
             Ok(r) => search.insert(q.into(), v(&r)),
             Err(e) => {
                 println!("search {q}: {e}, keeping the last recording");

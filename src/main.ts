@@ -15,7 +15,7 @@ import { api, fixtureMode, inTauri } from "./api";
 import { applyFlavor, progName } from "./flavor";
 import { drawUpdBtn, openUpdate, refreshBinary, refreshSelf } from "./dialogs/update";
 import { initServer, setStatus } from "./server";
-import { initDownloads } from "./downloads";
+import { drawIndicator, initDownloads } from "./downloads";
 import { renderAdvanced } from "./screens/advanced";
 import { invalidateLibrary, renderLibrary } from "./screens/library";
 import { renderStart } from "./screens/start";
@@ -52,6 +52,7 @@ function render() {
     }
   } else if (focusId && focusId !== "libq") document.getElementById(focusId)?.focus();
   setStatus();
+  drawIndicator();
 }
 setRender(render);
 

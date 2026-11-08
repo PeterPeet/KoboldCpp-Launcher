@@ -104,13 +104,21 @@ function backendFor(cfg: Record<string, unknown>) {
   return cfg;
 }
 
-function startTemplate(t: Template) {
+/** start: download and launch; false: only download. `preset`: also save the setup as a preset. */
+function startTemplate(t: Template, start = true, preset?: string) {
   const files = t.files.map(([, url, size]) => ({ url, size }));
   const cfg = backendFor({ ...t.config, istemplate: false });
-  getAndStart("t:" + t.id, t.title, files, cfg);
+  getAndStart("t:" + t.id, t.title, files, cfg, { start, preset });
 }
 
-export function startPopular(m: PopularItem) {
+/** After a download: fresh "Downloaded" marks for templates and the popular list. */
+export function refreshDownloaded() {
+  tplRequested = true;
+  S.popularKey = "";
+  loadTemplates();
+}
+
+export function startPopular(m: PopularItem, start = true) {
   const vision = !!m.mmproj && getOpts(m.id).vision;
   const files = [{ url: m.urls[0], size: m.pick.size }];
   if (vision) files.push({ url: m.mmproj![0], size: m.mmproj![1] });
@@ -123,7 +131,7 @@ export function startPopular(m: PopularItem) {
     files.push({ url: m.mtp!.url!, size: m.mtp!.size! });
     cfg.draftmodel = m.mtp!.url;
   }
-  getAndStart("m:" + m.id, m.name, files, backendFor(cfg));
+  getAndStart("m:" + m.id, m.name, files, backendFor(cfg), { start });
 }
 
 /* ---------- view ---------- */
@@ -172,22 +180,32 @@ function templatesSection() {
   const head = h("div", { class: "sec-head" },
     h("div", {},
       h("h2", {}, "KoboldCpp's ready-made setups"),
-      h("p", {}, `KoboldCpp's own templates for ${TIER_LABEL[tier].toLowerCase()} PCs. One click downloads every model in it.`)),
+      h("p", {}, S.showAllTiers
+        ? "All of KoboldCpp's own templates, for every kind of PC. One click downloads every model in it."
+        : `KoboldCpp's own templates that fit this PC (${TIER_LABEL[tier].toLowerCase()} first). One click downloads every model in it.`)),
     toggle("allTiers", S.showAllTiers, (v) => { S.showAllTiers = v; render(); }, "Show all templates"));
   if (!S.templates) return [head, h("div", { class: "empty" }, "Loading KoboldCpp's templates…")];
   if (S.templatesError && !S.templates.length) return [head, h("div", { class: "empty" }, `Could not load templates: ${S.templatesError}`)];
   loadTemplateFits();
+  // Without "Show all": every template that fits this PC, whatever its tier (a high-spec PC
+  // runs the low-spec ones too), plus this tier's own ones that fit partly. This PC's tier first.
+  const RANK = { high: 3, mid: 2, low: 1 } as const;
   const list = S.templates
-    .filter((t) => S.showAllTiers || t.tier === tier)
     .map((t) => ({ t, f: tplFits[t.id] ?? ("full" as Fit) }))
-    .filter((o) => S.showAllTiers || o.f !== "none");
+    .filter((o) => S.showAllTiers || o.f === "full" || (o.t.tier === tier && o.f !== "none"))
+    .sort((a, b) => S.showAllTiers ? 0 : Number(b.t.tier === tier) - Number(a.t.tier === tier) || (RANK[b.t.tier ?? "low"] - RANK[a.t.tier ?? "low"]));
   const tiles = h("div", { class: "tiles" });
   list.forEach(({ t, f }, i) =>
     tiles.append(h("div", { class: "tile" + (i === 0 && !S.showAllTiers ? " best" : "") },
       h("div", { class: "tile-head" }, h("div", {}, h("h4", {}, t.title), h("div", { class: "file" }, t.id + ".kcppt")), ...fitPill(f)),
       h("div", { class: "parts" }, ...t.parts.map((p) => h("span", {}, p))),
       h("div", { class: "meta" }, (t.size ? `${fmtBytes(t.size)} download` : "Size unknown") + (t.context ? ` · ${Math.round(t.context / 1024)}K context` : "")),
-      f === "none" ? h("div", { class: "meta", style: "color:var(--bad)" }, "Needs more memory than this PC has") : goControl("t:" + t.id, t.title, () => startTemplate(t), { installed: t.downloaded }))));
+      f === "none"
+        ? h("div", { style: "display:grid;gap:8px" },
+            h("div", { class: "meta", style: "color:var(--bad)" }, "Needs more memory than this PC has"),
+            // E.g. to take the models and the setup to a bigger PC: download only, saved as a preset.
+            goControl("t:" + t.id, t.title, () => startTemplate(t, false, t.title), { getOnly: "Load anyway", getTitle: "Download the models anyway and save this setup as a preset (it won't start on this PC)" }))
+        : goControl("t:" + t.id, t.title, (start) => startTemplate(t, start), { installed: t.downloaded }))));
   return [head, list.length ? tiles : h("div", { class: "empty" }, "No templates for this PC. Turn on “Show all templates”.")];
 }
 
@@ -231,7 +249,10 @@ function popularSection() {
  *  name, labels, Vision/MTP options, quant, size, speed, Start or Get and start. */
 export function popularRow(m: PopularItem, showFamily = false) {
   const key = "m:" + m.id;
-  const ctl = goControl(key, m.name, () => startPopular(m), { installed: isDownloaded(m) });
+  const tooBig = m.pick.fit === "none";
+  const ctl = goControl(key, m.name, (start) => startPopular(m, start), tooBig
+    ? { getOnly: "Get anyway", getTitle: "Too big to run on this PC: download only" }
+    : { installed: isDownloaded(m) });
   // Switching an option on can need files that aren't here yet: the button follows.
   const opt = (id: string, label: string, title: string, on: boolean, set: (v: boolean) => void) =>
     h("label", { class: "pill p-mute opt", for: id, title }, checkbox(id, on, (v) => { set(v); render(); }), label);

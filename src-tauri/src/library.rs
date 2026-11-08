@@ -34,7 +34,11 @@ pub enum Format {
 pub struct LocalModel {
     pub path: PathBuf,
     pub file: String,
+    /// From the file name (without quant and part number): finetunes keep their own name.
     pub name: String,
+    /// What the model calls itself (`general.name`), when it says something else. Finetunes
+    /// often keep their base model's name here ("Gemma 3" for Gemmasutra).
+    pub reported_name: Option<String>,
     pub kind: ModelType,
     pub architecture: Option<String>,
     /// Model family ("glm", "qwen", …) from the model's name. The architecture alone can mislead:
@@ -248,11 +252,12 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
             }
             let size = info.as_ref().map(|i| i.total_size).filter(|&s| s > 0).unwrap_or_else(|| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0));
             let arch = info.as_ref().and_then(|i| i.architecture.clone());
-            let stem = file.trim_end_matches(".gguf");
-            let name = info.as_ref().and_then(|i| i.name.clone()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| stem.to_string());
+            let name = name_from_file(&file);
+            let reported = info.as_ref().and_then(|i| i.name.clone()).map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
             Some(LocalModel {
                 kind: classify(&file, arch.as_deref()),
-                family: family_of(&name, &file),
+                family: family_of(reported.as_deref().unwrap_or(""), &file),
+                reported_name: reported.filter(|r| flat_key(r) != flat_key(&name)),
                 name,
                 quant: info.as_ref().and_then(|i| i.file_type.clone()).or_else(|| crate::hf::quant_of(&file).map(|q| q.0)),
                 size_label: info.as_ref().and_then(|i| i.size_label.clone()),
@@ -320,6 +325,33 @@ pub fn scan(roots: &[(PathBuf, bool)], last_used: &HashMap<String, u64>, install
     (models, shown)
 }
 
+/// Display name from a model file: "Gemmasutra-Mini-2B-v1-Q4_K_M.gguf" → "Gemmasutra-Mini-2B-v1".
+/// Split part numbers and the quant (with its separator) are left out.
+pub fn name_from_file(file: &str) -> String {
+    let mut stem = file.strip_suffix(".gguf").or_else(|| file.strip_suffix(".GGUF")).unwrap_or(file).to_string();
+    if gguf::split_part(&format!("{stem}.gguf")).is_some() {
+        stem.truncate(stem.len() - "-00001-of-00002".len());
+    }
+    if let Some((q, label)) = crate::hf::quant_of(&format!("{stem}.gguf")) {
+        let up = stem.to_ascii_uppercase();
+        // The last place the quant appears, with "UD-" before it if the label has that.
+        let tag = if label.starts_with("UD-") { format!("UD-{q}") } else { q };
+        if let Some(i) = up.rfind(&tag).or_else(|| up.rfind(&tag.replace('-', "_"))) {
+            let before = stem[..i].trim_end_matches(['-', '_', '.', ' ']);
+            let after = stem[i + tag.len()..].trim_start_matches(['-', '_', '.', ' ']);
+            if !before.is_empty() {
+                stem = if after.is_empty() { before.to_string() } else { format!("{before}-{after}") };
+            }
+        }
+    }
+    stem
+}
+
+/// Names compared without case, spaces, dashes and underscores.
+fn flat_key(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
 /// Family from the model's name, then its file name (see `LocalModel::family`).
 fn family_of(name: &str, file: &str) -> Option<String> {
     let flat = |s: &str| s.replace([' ', '_'], "-");
@@ -339,6 +371,7 @@ fn weights_model(dir: &Path, drives: &[Drive], last_used: &HashMap<String, u64>)
     let ctx = cfg.get("max_position_embeddings").or_else(|| cfg.pointer("/text_config/max_position_embeddings")).and_then(|v| v.as_u64());
     let layers = cfg.get("num_hidden_layers").or_else(|| cfg.pointer("/text_config/num_hidden_layers")).and_then(|v| v.as_u64()).map(|v| v as u32);
     LocalModel {
+        reported_name: None,
         path: dir.to_path_buf(),
         file: name.clone(),
         family: family_of(&name, ""),
@@ -544,6 +577,16 @@ mod tests {
         std::fs::create_dir_all(&deep).unwrap();
         std::fs::write(deep.join("x-Q4_K_M.gguf"), gguf::tests::llama_like()).unwrap();
         assert_eq!(scan(&[(d.path().to_path_buf(), true)], &HashMap::new(), None).0.len(), 1);
+    }
+
+    #[test]
+    fn names_come_from_the_file() {
+        assert_eq!(name_from_file("Gemmasutra-Mini-2B-v1-Q4_K_M.gguf"), "Gemmasutra-Mini-2B-v1");
+        assert_eq!(name_from_file("Qwen3-30B-A3B-UD-Q4_K_XL-00001-of-00002.gguf"), "Qwen3-30B-A3B");
+        assert_eq!(name_from_file("mistral.Q8_0.gguf"), "mistral");
+        assert_eq!(name_from_file("plain-model.gguf"), "plain-model");
+        assert_eq!(name_from_file("Q4_K_M.gguf"), "Q4_K_M");
+        assert_eq!(flat_key("Gemma 3"), flat_key("gemma-3"));
     }
 
     #[test]

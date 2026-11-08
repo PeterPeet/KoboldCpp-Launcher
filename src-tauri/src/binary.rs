@@ -205,11 +205,32 @@ pub fn prune_old(bin_dir: &Path, keep: &Path) {
     if let Ok(entries) = std::fs::read_dir(bin_dir) {
         for e in entries.flatten() {
             let p: PathBuf = e.path();
-            if p.is_dir() && Some(&p) != keep_dir.as_ref() {
+            // The install folder can be one the user chose: only remove version folders that
+            // hold nothing but KoboldCpp/Esobold program files.
+            if p.is_dir() && Some(&p) != keep_dir.as_ref() && is_program_dir(&p) {
                 let _ = std::fs::remove_dir_all(&p);
             }
         }
     }
+}
+
+/// A file name of a KoboldCpp or Esobold program (or its unfinished download).
+pub fn is_program_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.starts_with("koboldcpp") || n.starts_with("esobold")
+}
+
+/// A folder with at least one entry, and only KoboldCpp/Esobold program files in it.
+fn is_program_dir(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    let mut any = false;
+    for e in entries.flatten() {
+        any = true;
+        if !e.path().is_file() || !is_program_name(&e.file_name().to_string_lossy()) {
+            return false;
+        }
+    }
+    any
 }
 
 #[cfg(test)]
@@ -217,6 +238,23 @@ mod tests {
     use super::*;
     use crate::config::Backend;
     use crate::hardware::{Gpu, Tier};
+
+    #[test]
+    fn prune_only_removes_old_program_folders() {
+        let d = tempfile::tempdir().unwrap();
+        let mk = |dir: &str, file: &str| {
+            std::fs::create_dir_all(d.path().join(dir)).unwrap();
+            std::fs::write(d.path().join(dir).join(file), b"x").unwrap();
+        };
+        mk("v1.0", "koboldcpp-mac-arm64");
+        mk("v1.1", "koboldcpp-mac-arm64");
+        mk("photos", "cat.jpg");
+        mk("mixed", "koboldcpp.exe");
+        mk("mixed", "notes.txt");
+        prune_old(d.path(), &d.path().join("v1.1/koboldcpp-mac-arm64"));
+        assert!(!d.path().join("v1.0").exists());
+        assert!(d.path().join("v1.1").exists() && d.path().join("photos").exists() && d.path().join("mixed").exists());
+    }
 
     fn hw(api: Option<GpuApi>, avx2: Option<bool>) -> HardwareInfo {
         HardwareInfo {

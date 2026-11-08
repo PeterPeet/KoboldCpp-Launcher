@@ -32,11 +32,17 @@ export interface Settings {
   /** Esobold mode (Advanced setup › Esobold) and its own installed program. */
   esobold: boolean; esoboldBinary: InstalledBinary | null;
   modelsDir: string | null; libraryFolders: LibraryFolder[]; sources: Source[];
+  /** Own folders (Advanced setup › Launcher Setup); null = inside the data folder. */
+  koboldcppDir: string | null; esoboldDir: string | null; presetsDir: string | null;
   /** How much RAM models may use: "stable" 60 %, "unstable" 98 % (see `ramShare` in state.ts). */
   ramMode: RamMode;
 }
 export type RamMode = "stable" | "unstable";
 export interface Paths { data: string; models: string; presets: string; logs: string }
+export interface SetupPath { path: string; default: string }
+export type SetupKind = "koboldcpp" | "esobold" | "models" | "presets" | "data";
+/** Where the launcher keeps things; `dataPending`: data folder for the next start. */
+export type LauncherSetup = Record<SetupKind, SetupPath> & { dataPending: string | null };
 export interface Logs { dir: string; koboldcpp: string; launcher: string }
 export type ServerStatus =
   | { state: "stopped" }
@@ -90,7 +96,9 @@ export interface Machine {
 }
 export type ModelKind = "Text" | "Vision" | "Image" | "Speech" | "Embedding" | "Projector" | "MtpHead";
 export interface LocalModel {
-  path: string; file: string; name: string; kind: ModelKind; architecture: string | null;
+  path: string; file: string;
+  /** From the file name; `reportedName`: what the model calls itself, when that differs. */
+  name: string; reportedName: string | null; kind: ModelKind; architecture: string | null;
   /** Family from the model's name ("glm", "qwen" …); null: fall back to the architecture. */
   family: string | null; quant: string | null; sizeLabel: string | null;
   size: number; parts: number; layers: number | null; contextLength: number | null; headCountKv: number | null; kvLen: number | null;
@@ -158,6 +166,7 @@ const mockListeners: { event: string; cb: (p: unknown) => void }[] = [];
 const emitMock = (event: string, payload: unknown) => mockListeners.filter((l) => l.event === event).forEach((l) => l.cb(payload));
 let mockSettings: Settings = {
   binary: { path: "/Applications/koboldcpp", version: "v1.123.1", asset: "koboldcpp-mac-arm64" }, checkUpdatesOnStart: true, includePrereleases: false, modelsDir: null, libraryFolders: [], ramMode: "stable",
+  koboldcppDir: null, esoboldDir: null, presetsDir: null,
   esobold: false, esoboldBinary: null,
   sources: [
     { id: "kcppt", name: "KoboldCpp templates", builtin: true, desc: "Ready-made setups from hf.co/koboldcpp", on: true, comps: null },
@@ -238,8 +247,8 @@ export const api = {
   popular: (options: { officialOnly: boolean; showUncensored: boolean; sort: SortOrder }, machine: Machine, family: string | null) =>
     call<PopularResult>("popular_models", { options, machine, family }, () => import("./mock").then((m) => m.mockPopular(options, machine, mockSettings.sources, family))),
   families: () => call<[string, string, string][]>("model_families", {}, () => [["gemma", "Gemma", "google"], ["qwen", "Qwen", "Qwen"], ["glm", "GLM", "zai-org"], ["deepseek", "DeepSeek", "deepseek-ai"], ["mistral", "Mistral", "mistralai"], ["llama", "Llama", "meta-llama"], ["gpt-oss", "GPT-oss", "openai"], ["nemotron", "Nemotron", "nvidia"]]),
-  search: (query: string, machine: Machine) =>
-    call<PopularResult>("search_models", { query, machine }, () => import("./mock").then((m) => m.mockSearch(query, machine, mockSettings.sources))),
+  search: (query: string, machine: Machine, showAll = false) =>
+    call<PopularResult>("search_models", { query, machine, showAll }, () => import("./mock").then((m) => m.mockSearch(query, machine, mockSettings.sources, showAll))),
   repoFiles: (repo: string) => call<RepoFiles>("repo_files", { repo }, () => import("./mock").then((m) => m.mockRepoFiles(repo))),
   downloadFiles: (id: string, files: { url: string; size: number | null }[]) =>
     call<[string, string][]>("download_files", { id, files }, async () => {
@@ -279,6 +288,27 @@ export const api = {
   importConfig: (path: string) => call<{ config: Kcpps; removed: string[] }>("import_config", { path }),
   lastConfig: () => call<Kcpps | null>("last_config", {}, () => null),
   importSources: (path: string) => call<Source[]>("import_sources", { path }),
+
+  launcherSetup: () => call<LauncherSetup>("launcher_setup", {}, () => mockSetup),
+  /** path null: back to the default folder. */
+  setLauncherPath: (kind: SetupKind, path: string | null) =>
+    call<LauncherSetup>("set_launcher_path", { kind, path }, () => {
+      mockSetup = { ...mockSetup, [kind]: { ...mockSetup[kind], path: path ?? mockSetup[kind].default } };
+      if (kind === "data") mockSetup.dataPending = path && path !== mockSetup.data.default ? path : null;
+      return mockSetup;
+    }),
+  exportLauncherConfig: (path: string) => call<void>("export_launcher_config", { path }),
+  importLauncherConfig: (path: string) => call<Settings>("import_launcher_config", { path }),
+};
+
+const MOCK_DATA = "~/Library/Application Support/io.github.peterpeet.koboldlauncher";
+let mockSetup: LauncherSetup = {
+  koboldcpp: { path: MOCK_DATA + "/bin", default: MOCK_DATA + "/bin" },
+  esobold: { path: MOCK_DATA + "/bin-esobold", default: MOCK_DATA + "/bin-esobold" },
+  models: { path: MOCK_DATA + "/models", default: MOCK_DATA + "/models" },
+  presets: { path: MOCK_DATA + "/presets", default: MOCK_DATA + "/presets" },
+  data: { path: MOCK_DATA, default: MOCK_DATA },
+  dataPending: null,
 };
 
 const mockCancelled = new Set<string>();

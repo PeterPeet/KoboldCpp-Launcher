@@ -72,10 +72,14 @@ export function mockPopular(o: { officialOnly: boolean; showUncensored: boolean;
   return { items, tooBig, dupes: kept - items.length, errors: [] };
 }
 
-export function mockSearch(q: string, m: Machine, sources: Source[]): PopularResult {
+export function mockSearch(q: string, m: Machine, sources: Source[], showAll = false): PopularResult {
   const l = q.toLowerCase();
   const all = mockPopular({ officialOnly: false, showUncensored: true, sort: "downloads" }, m, sources.map((s) => ({ ...s, on: true })), "__all");
-  return { ...all, items: all.items.filter((i) => (i.name + i.id).toLowerCase().includes(l)) };
+  const items = all.items.filter((i) => (i.name + i.id).toLowerCase().includes(l));
+  const on = (i: PopularItem) => showAll || sources.some((s) => s.on && s.name.toLowerCase() === i.author.toLowerCase());
+  const hidden = new Map<string, number>();
+  for (const i of items.filter((i) => !on(i))) hidden.set(i.author, (hidden.get(i.author) ?? 0) + 1);
+  return { ...all, items: items.filter(on), hidden: [...hidden] };
 }
 
 /** Same idea as fit::estimate_tps, roughly. */
@@ -101,7 +105,7 @@ export function mockTrash(path: string) { removed.add(path); }
 export function mockLibrary(): LibraryView {
   const kind = (t: string): ModelKind => (t === "Image" || t === "Speech" || t === "Embedding" || t === "Vision" ? t : "Text");
   const models: LocalModel[] = LOCAL.map((m) => ({
-    path: `/${m.drive}/models/${m.name.replace(/ /g, "-")}.gguf`, file: `${m.name.replace(/ /g, "-")}.gguf`, name: m.name, kind: kind(m.type),
+    path: `/${m.drive}/models/${m.name.replace(/ /g, "-")}.gguf`, file: `${m.name.replace(/ /g, "-")}.gguf`, name: m.name, reportedName: m.name.includes("Cydonia") ? "Mistral Small 3.2" : null, kind: kind(m.type),
     architecture: m.famName.toLowerCase(), family: null, quant: m.tags.split(" · ")[1] ?? null, sizeLabel: m.tags.split(" · ")[0], size: m.size * GB, parts: m.id === 4 ? 3 : 1,
     layers: 40, contextLength: m.ctx === "–" ? null : parseInt(m.ctx) * 1024, headCountKv: 8, kvLen: 128,
     mmproj: m.type === "Vision" ? `/${m.drive}/models/mmproj-F16.gguf` : null, drive: `/${m.drive}`, modified: null,
@@ -110,7 +114,7 @@ export function mockLibrary(): LibraryView {
     support: m.type === "Image" || m.type === "Speech" ? null : m.id === 10 ? "no" as const : "yes" as const,
   })).filter((m) => !removed.has(m.path));
   models.push({
-    path: "/C/lmstudio/gemma-4-E2B-it-MLX-4bit", file: "gemma-4-E2B-it-MLX-4bit", name: "gemma-4-E2B-it-MLX-4bit", kind: "Vision", architecture: "gemma4", family: "gemma",
+    path: "/C/lmstudio/gemma-4-E2B-it-MLX-4bit", file: "gemma-4-E2B-it-MLX-4bit", name: "gemma-4-E2B-it-MLX-4bit", reportedName: null, kind: "Vision", architecture: "gemma4", family: "gemma",
     quant: "4-bit", sizeLabel: null, size: 4.3 * GB, parts: 1, layers: 35, contextLength: 131072, headCountKv: null, kvLen: null, mmproj: null,
     drive: "/C", modified: null, lastUsed: null, missingParts: 0, readable: true, support: null, format: "mlx", mtp: false, mtpDraft: null,
   });

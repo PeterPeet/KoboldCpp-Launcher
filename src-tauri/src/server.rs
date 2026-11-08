@@ -129,7 +129,7 @@ fn kill_tree(pid: u32) -> usize {
 #[cfg_attr(unix, allow(dead_code))]
 fn programs_from(sys: &sysinfo::System, bin_dir: &Path) -> Vec<sysinfo::Pid> {
     let me = sysinfo::Pid::from_u32(std::process::id());
-    sys.processes().iter().filter(|(p, x)| **p != me && x.exe().is_some_and(|e| crate::library::path_under(e, bin_dir))).map(|(p, _)| *p).collect()
+    sys.processes().iter().filter(|(p, x)| **p != me && x.exe().is_some_and(|e| crate::library::path_under(e, bin_dir) && e.file_name().is_some_and(|n| crate::binary::is_program_name(&n.to_string_lossy())))).map(|(p, _)| *p).collect()
 }
 
 /// A KoboldCpp started from `bin_dir` that still listens on `port` but that we no longer track
@@ -223,7 +223,12 @@ pub fn kill_orphans(bin_dir: &Path) -> usize {
 #[cfg(unix)]
 fn started_from(command: &str, bin_dir: &str) -> bool {
     let bin = bin_dir.trim_end_matches('/');
-    !bin.is_empty() && command.trim_start().strip_prefix(bin).is_some_and(|rest| rest.starts_with('/'))
+    // The program itself must be KoboldCpp or Esobold: the folder can be one the user chose.
+    let program = |rest: &str| {
+        let path = rest.split(" -").next().unwrap_or(rest).trim_end();
+        crate::binary::is_program_name(path.rsplit('/').next().unwrap_or(""))
+    };
+    !bin.is_empty() && command.trim_start().strip_prefix(bin).is_some_and(|rest| rest.starts_with('/') && program(rest))
 }
 
 /// System tools by their fixed location, so a changed PATH can't swap them.
@@ -539,6 +544,8 @@ mod tests {
         assert!(!started_from("vim /Users/x/Library/Application Support/kl/bin/v1.124.2/koboldcpp-mac-arm64", bin));
         assert!(!started_from("/Users/x/Library/Application Support/kl/bin-other/koboldcpp", bin));
         assert!(!started_from("/anything", ""));
+        // Other programs in the same folder are never ours.
+        assert!(!started_from("/Users/x/Library/Application Support/kl/bin/tools/python3 -m x", bin));
     }
 
     #[test]

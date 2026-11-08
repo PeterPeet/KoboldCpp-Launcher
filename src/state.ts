@@ -16,6 +16,8 @@ export const S = {
   uncensored: false,
   showAllTiers: false,
   running: null as string | null,
+  /** Which setup (download key) the running server came from: templates can share a title. */
+  runningKey: null as string | null,
   /** Loaded from settings.json at start. */
   sources: [] as Source[],
   lib: {

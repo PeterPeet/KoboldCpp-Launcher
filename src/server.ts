@@ -28,6 +28,13 @@ export function setStatus() {
     lite.hidden = S.server.state !== "running";
     lite.onclick = openLite;
   }
+  // "Stop" at the top right while KoboldCpp starts or runs.
+  const stopBtn = document.getElementById("stopBtn");
+  if (stopBtn) {
+    stopBtn.hidden = !isActive();
+    stopBtn.title = `Stop ${progName()}`;
+    stopBtn.onclick = () => stop();
+  }
 }
 
 export const isActive = () => S.server.state === "starting" || S.server.state === "running";
@@ -36,6 +43,7 @@ export const serverPort = () => (S.server.state === "running" || S.server.state 
 /** Start KoboldCpp with a config; `label` is what the UI shows (model or template name). */
 export async function launch(label: string, config: Kcpps) {
   S.running = label;
+  S.runningKey = null;
   S.logs = [];
   try {
     const port = await api.startServer(config);

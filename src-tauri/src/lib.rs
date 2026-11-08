@@ -20,10 +20,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let dir = app.path().app_data_dir()?;
-            let state = AppState::new(dir);
+            let default_dir = app.path().app_data_dir()?;
+            // The data folder can live elsewhere (Advanced setup › Launcher Setup).
+            let state = AppState::new(store::resolve_root(&default_dir), default_dir);
             // A KoboldCpp or Esobold left from a session that was killed instead of closed.
-            let bins = [state.dirs.bin(), state.dirs.bin_esobold()];
+            let bins = state.settings().all_bin_dirs(&state.dirs);
             std::thread::spawn(move || {
                 let n: usize = bins.iter().map(|b| server::kill_orphans(b)).sum();
                 if n > 0 {
@@ -80,6 +81,10 @@ pub fn run() {
             load_config,
             import_config,
             last_config,
+            launcher_setup,
+            set_launcher_path,
+            export_launcher_config,
+            import_launcher_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
